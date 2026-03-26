@@ -14,13 +14,13 @@ from io import BytesIO
 def generate_shift_pdf(shift):
     """
     Generate a receipt-style PDF for a shift report.
-    
-    Args:
-        shift: DrillShift object with all related data
-        
-    Returns:
-        BytesIO buffer containing the PDF
+    The company name in the header is derived from the shift's contractor_workspace
+    (if set), otherwise falls back to 'DI-VISION'.
     """
+    # Determine company name from workspace
+    company_name = 'DI-VISION'
+    if getattr(shift, 'contractor_workspace', None) and shift.contractor_workspace:
+        company_name = shift.contractor_workspace.name.upper()
     buffer = BytesIO()
     
     # Create PDF (A4 size, portrait)
@@ -57,7 +57,7 @@ def generate_shift_pdf(shift):
         y -= 10
     
     # ======= HEADER =======
-    draw_line("LEOS INVESTMENTS LTD", size=14, bold=True, center=True)
+    draw_line(company_name, size=14, bold=True, center=True)
     draw_line("Daily Drill Shift Report", size=11, center=True)
     draw_separator("=")
     y -= 5

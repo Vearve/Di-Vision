@@ -1,56 +1,344 @@
 {% extends 'core/base.html' %}
 
-{% block title %}Monthly BOQ - Mini-Krux{% endblock %}
+{% block title %}{{ report.title }} - BOQ - Di-VisioN{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h4 class="card-title mb-0">Monthly Bill of Quantities</h4>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">{{ report.title }}</h2>
+        <p class="text-muted mb-0">{{ report.client.name }} | {{ report.period_start }} to {{ report.period_end }}</p>
     </div>
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-6">
-                <dl class="row">
-                    <dt class="col-sm-4">Period</dt>
-                    <dd class="col-sm-8">{{ start_date|date:"F j, Y" }} - {{ end_date|date:"F j, Y" }}</dd>
-                    
-                    <dt class="col-sm-4">Total Shifts</dt>
-                    <dd class="col-sm-8">{{ shifts|length }}</dd>
-                    
-                    <dt class="col-sm-4">Total Meters</dt>
-                    <dd class="col-sm-8">{{ total_meters|floatformat:2 }}</dd>
-                </dl>
+    <div class="d-flex gap-2">
+        <a href="{% url 'core:boq_report_export' report.pk %}" class="btn btn-success">
+            <i class="bi bi-file-earmark-excel"></i> Export Excel
+        </a>
+        <a href="{% url 'core:boq_report_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to BOQ Reports
+        </a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h6 class="text-muted">Total Shifts</h6><h3 class="mb-0">{{ total_shifts }}</h3></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h6 class="text-muted">Total Meters</h6><h3 class="mb-0">{{ total_meters|floatformat:2 }}</h3></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h6 class="text-muted">Contractor Status</h6><span class="badge {% if report.status == 'draft' %}bg-secondary{% else %}bg-primary{% endif %}">{{ report.get_status_display }}</span></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h6 class="text-muted">Client Status</h6><span class="badge {% if report.client_status == 'approved' %}bg-success{% elif report.client_status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ report.get_client_status_display }}</span></div></div></div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-light"><strong>Included Shifts</strong></div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Rig</th>
+                                <th>Location</th>
+                                <th>Supervisor</th>
+                                <th>Shift</th>
+                                <th>Client Shift Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for shift in shifts %}
+                            <tr>
+                                <td>{{ shift.date }}</td>
+                                <td>{{ shift.rig|default:'--' }}</td>
+                                <td>{{ shift.location|default:'--' }}</td>
+                                <td>{{ shift.supervisor_name|default:'--' }}</td>
+                                <td>{{ shift.get_shift_type_display }}</td>
+                                <td>
+                                    <span class="badge {% if shift.client_status == 'client_approved' %}bg-success{% elif shift.client_status == 'client_rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                        {{ shift.get_client_status_display|default:'Pending Client Approval' }}
+                                    </span>
+                                </td>
+                                <td><a href="{% url 'core:shift_detail' shift.pk %}" class="btn btn-sm btn-outline-primary">View</a></td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="7" class="text-center text-muted py-4">No approved shifts fall within this BOQ period.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-        
-        <h5 class="mt-4">Materials Summary</h5>
-        <div class="table-responsive">
-            <table class="table table-sm">
-                <thead>
-                    <tr>
-                        <th>Material</th>
-                        <th>Total Quantity</th>
-                        <th>Unit</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for material in materials_summary %}
-                    <tr>
-                        <td>{{ material.material_name }}</td>
-                        <td>{{ material.total_quantity|floatformat:2 }}</td>
-                        <td>{{ material.unit }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-light"><strong>Materials Summary</strong></div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Material</th>
+                                <th>Total Quantity</th>
+                                <th>Unit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for material in materials_summary %}
+                            <tr>
+                                <td>{{ material.material_name }}</td>
+                                <td>{{ material.total_quantity|floatformat:2 }}</td>
+                                <td>{{ material.unit }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-center text-muted py-3">No materials recorded for this period.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-        
-        <div class="mt-4">
-            <a href="{% url 'core:export_boq' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" 
-               class="btn btn-success">
-                <i class="bi bi-file-earmark-excel"></i> Export to Excel
-            </a>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light"><strong>BOQ Line Items & Costs</strong></div>
+            <div class="card-body">
+                {% if line_items %}
+                    <!-- Drill Size Presets Section -->
+                    {% if line_items_by_type.drill_size %}
+                    <div class="mb-4">
+                        <h6 class="text-uppercase text-muted mb-2"><i class="bi bi-speedometer"></i> Drill Size Services</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm border-bottom mb-3">
+                                <thead>
+                                    <tr class="text-muted">
+                                        <th>Item</th>
+                                        <th class="text-end">Quantity</th>
+                                        <th class="text-end">Unit</th>
+                                        <th class="text-end">Rate</th>
+                                        <th class="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in line_items_by_type.drill_size %}
+                                    <tr>
+                                        <td>{{ item.item_name }}</td>
+                                        <td class="text-end">{{ item.quantity|floatformat:2 }}</td>
+                                        <td class="text-end">{{ item.unit }}</td>
+                                        <td class="text-end">${{ item.locked_rate|floatformat:2 }}</td>
+                                        <td class="text-end fw-bold">${{ item.total_amount|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="fw-bold border-top">
+                                        <td colspan="4" class="text-end">Subtotal:</td>
+                                        <td class="text-end">${{ type_totals.drill_size|floatformat:2 }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Equipment Presets Section -->
+                    {% if line_items_by_type.equipment %}
+                    <div class="mb-4">
+                        <h6 class="text-uppercase text-muted mb-2"><i class="bi bi-tools"></i> Equipment</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm border-bottom mb-3">
+                                <thead>
+                                    <tr class="text-muted">
+                                        <th>Item</th>
+                                        <th class="text-end">Quantity</th>
+                                        <th class="text-end">Period</th>
+                                        <th class="text-end">Rate</th>
+                                        <th class="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in line_items_by_type.equipment %}
+                                    <tr>
+                                        <td>{{ item.item_name }}</td>
+                                        <td class="text-end">{{ item.quantity|floatformat:2 }}</td>
+                                        <td class="text-end text-capitalize">{{ item.unit }}</td>
+                                        <td class="text-end">${{ item.locked_rate|floatformat:2 }}</td>
+                                        <td class="text-end fw-bold">${{ item.total_amount|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="fw-bold border-top">
+                                        <td colspan="4" class="text-end">Subtotal:</td>
+                                        <td class="text-end">${{ type_totals.equipment|floatformat:2 }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Consumables Presets Section -->
+                    {% if line_items_by_type.consumable %}
+                    <div class="mb-4">
+                        <h6 class="text-uppercase text-muted mb-2"><i class="bi bi-box-seam"></i> Consumables</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm border-bottom mb-3">
+                                <thead>
+                                    <tr class="text-muted">
+                                        <th>Item</th>
+                                        <th class="text-end">Quantity</th>
+                                        <th class="text-end">Unit</th>
+                                        <th class="text-end">Rate</th>
+                                        <th class="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in line_items_by_type.consumable %}
+                                    <tr>
+                                        <td>{{ item.item_name }}</td>
+                                        <td class="text-end">{{ item.quantity|floatformat:2 }}</td>
+                                        <td class="text-end">{{ item.unit }}</td>
+                                        <td class="text-end">${{ item.locked_rate|floatformat:2 }}</td>
+                                        <td class="text-end fw-bold">${{ item.total_amount|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="fw-bold border-top">
+                                        <td colspan="4" class="text-end">Subtotal:</td>
+                                        <td class="text-end">${{ type_totals.consumable|floatformat:2 }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Grand Total Section -->
+                    <div class="bg-light p-3 border rounded text-end">
+                        <h5 class="mb-0">Grand Total: <span class="text-success">${{ grand_total|floatformat:2 }}</span></h5>
+                    </div>
+                {% else %}
+                    <p class="text-center text-muted py-4">No line items added yet. Create a new BOQ and select presets to generate line items.</p>
+                {% endif %}
+            </div>
         </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-light"><strong>Workflow Notes</strong></div>
+            <div class="card-body">
+                <p><strong>Created by:</strong> {{ report.created_by.username }}</p>
+                <p><strong>Submitted to client:</strong> {{ report.submitted_to_client_at|default:'Not yet submitted' }}</p>
+                <p><strong>Client reviewed:</strong> {{ report.client_reviewed_at|default:'Awaiting review' }}</p>
+                <hr>
+                <p><strong>Contractor Comments</strong></p>
+                <p class="text-muted">{{ report.contractor_comments|default:'No contractor comments provided.' }}</p>
+                <p><strong>Client Comments</strong></p>
+                <p class="text-muted">{{ report.client_comments|default:'No client comments yet.' }}</p>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-light"><strong>Additional Charges</strong></div>
+            <div class="card-body">
+                {% if additional_charges %}
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th class="text-end">Amount</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for charge in additional_charges %}
+                            <tr>
+                                <td>{{ charge.description }}</td>
+                                <td class="text-end {% if charge.amount < 0 %}text-danger{% else %}text-success{% endif %}">${{ charge.amount|floatformat:2 }}</td>
+                                <td>
+                                    <span class="badge {% if charge.status == 'approved' %}bg-success{% elif charge.status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ charge.get_status_display }}</span>
+                                </td>
+                            </tr>
+                            {% if charge.status == 'pending' %}
+                            <tr>
+                                <td colspan="3" class="p-0">
+                                    <div class="d-flex gap-2 mt-2">
+                                        <form method="post" action="{% url 'core:boq_update_additional_charge' report.pk charge.pk %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="approve">
+                                            <button class="btn btn-sm btn-success">Approve</button>
+                                        </form>
+                                        <form method="post" action="{% url 'core:boq_update_additional_charge' report.pk charge.pk %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="reject">
+                                            <button class="btn btn-sm btn-danger">Reject</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="small text-muted mb-2">Approved additional charges total: <strong>${{ additional_charges_total|floatformat:2 }}</strong></p>
+                {% else %}
+                <p class="text-muted">No additional charges proposed yet.</p>
+                {% endif %}
+
+                <form method="post" action="{% url 'core:boq_add_additional_charge' report.pk %}">
+                    {% csrf_token %}
+                    <div class="mb-2">
+                        <input name="description" type="text" class="form-control form-control-sm" placeholder="Description" required>
+                    </div>
+                    <div class="mb-2">
+                        <input name="amount" type="number" step="0.01" class="form-control form-control-sm" placeholder="Amount (+ or -)" required>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-outline-primary w-100">Propose Additional Charge</button>
+                </form>
+            </div>
+        </div>
+
+        {% if can_submit_to_client %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <h5>Submit to Client</h5>
+                <p class="text-muted">Send this BOQ package to {{ report.client.name }} for invoice approval.</p>
+                <form method="post" action="{% url 'core:boq_submit_to_client' report.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-send"></i> Submit BOQ to Client
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if can_client_review %}
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h5>Client Review</h5>
+                <p class="text-muted">Approve this BOQ if it is ready for invoicing, or reject it with revision notes.</p>
+                <form method="post" action="{% url 'core:client_review_boq' report.pk %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">Decision</label>
+                        <select name="decision" class="form-select" required>
+                            <option value="">Choose...</option>
+                            <option value="approved">Approve</option>
+                            <option value="rejected">Reject</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Comments</label>
+                        <textarea name="comments" class="form-control" rows="4" placeholder="Add approval notes or rejection reasons"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="bi bi-check2-circle"></i> Submit Client Decision
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

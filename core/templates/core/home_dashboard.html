@@ -1,7 +1,7 @@
 {% extends 'core/base.html' %}
 {% load static %}
 
-{% block title %}Home Dashboard - Leos Investments Ltd{% endblock %}
+{% block title %}Home Dashboard - Di-VisioN{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
@@ -9,6 +9,79 @@
         <h2 class="mb-3"><i class="bi bi-speedometer2"></i> Manager Dashboard</h2>
     </div>
 </div>
+
+<!-- Period & Client Filter -->
+<div class="card mb-4 shadow-sm border-0">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <!-- Period quick-select buttons -->
+            <div class="col-12 col-lg-auto">
+                <label class="form-label text-muted small mb-1">Period</label>
+                <div class="btn-group d-flex flex-wrap gap-1" role="group">
+                    {% for p_val, p_label in  period_options %}
+                    <input type="radio" class="btn-check" name="period" id="period_{{ p_val }}" value="{{ p_val }}" autocomplete="off" {% if period == p_val %}checked{% endif %}>
+                    <label class="btn btn-sm {% if period == p_val %}btn-primary{% else %}btn-outline-secondary{% endif %}" for="period_{{ p_val }}">{{ p_label }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+            <!-- Year (shown when period=year) -->
+            <div class="col-6 col-md-2" id="yearFieldGroup">
+                <label class="form-label text-muted small mb-1">Year</label>
+                <input type="number" name="year" class="form-control form-control-sm" value="{{ year_str }}" min="2020" max="2035">
+            </div>
+            <!-- Custom date range -->
+            <div class="col-6 col-md-2" id="dateFromGroup">
+                <label class="form-label text-muted small mb-1">From</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from_str }}">
+            </div>
+            <div class="col-6 col-md-2" id="dateToGroup">
+                <label class="form-label text-muted small mb-1">To</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to_str }}">
+            </div>
+            <!-- Client filter -->
+            <div class="col-12 col-md-3">
+                <label class="form-label text-muted small mb-1">Client</label>
+                <select name="client_id" class="form-select form-select-sm">
+                    <option value="">All Clients</option>
+                    {% for c in all_clients %}
+                    <option value="{{ c.pk }}" {% if filter_client_id == c.pk|stringformat:"i" %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <!-- Apply / Clear -->
+            <div class="col-6 col-md-auto">
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel-fill"></i> Apply</button>
+            </div>
+            {% if period != 'this_month' or filter_client_id %}
+            <div class="col-6 col-md-auto">
+                <a href="{% url 'core:home_dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle"></i> Clear</a>
+            </div>
+            {% endif %}
+        </form>
+        <!-- Active filter display -->
+        <div class="mt-2 small text-muted">
+            Showing: <strong>{{ period_label }}</strong>
+            {% if filter_client_obj %} · Client: <strong>{{ filter_client_obj.name }}</strong>{% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Show/hide year & custom date fields based on period radio selection
+(function () {
+    function syncPeriodFields() {
+        var period = document.querySelector('input[name="period"]:checked');
+        var val = period ? period.value : 'this_month';
+        document.getElementById('yearFieldGroup').style.display = (val === 'year') ? '' : 'none';
+        document.getElementById('dateFromGroup').style.display = (val === 'custom') ? '' : 'none';
+        document.getElementById('dateToGroup').style.display = (val === 'custom') ? '' : 'none';
+    }
+    document.querySelectorAll('input[name="period"]').forEach(function(r) {
+        r.addEventListener('change', syncPeriodFields);
+    });
+    syncPeriodFields();
+})();
+</script>
 
 <!-- Active Alerts Banner -->
 {% if total_active_alerts > 0 %}
@@ -171,7 +244,7 @@
             <div class="card-body text-center">
                 <div class="kpi-icon text-success"><i class="bi bi-calendar-check"></i></div>
                 <div class="kpi-value text-success">{{ meters_month|floatformat:0 }}m</div>
-                <div class="kpi-label">Meters Month</div>
+                <div class="kpi-label">Meters ({{ period_label }})</div>
             </div>
         </div>
     </div>
@@ -201,7 +274,7 @@
     <div class="col-12 col-lg-6">
         <div class="card shadow-sm h-100">
             <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-building"></i> Client Performance (This Month)</h5>
+                <h5 class="mb-0"><i class="bi bi-building"></i> Client Performance ({{ period_label }})</h5>
             </div>
             <div class="card-body">
                 {% if client_performance %}
@@ -246,7 +319,7 @@
     <div class="col-12 col-lg-6">
         <div class="card shadow-sm h-100">
             <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="bi bi-geo-alt"></i> Project/Location Performance (This Month)</h5>
+                <h5 class="mb-0"><i class="bi bi-geo-alt"></i> Project/Location Performance ({{ period_label }})</h5>
             </div>
             <div class="card-body">
                 {% if location_performance %}

@@ -1,13 +1,13 @@
 {% extends "admin/base.html" %}
 {% load static %}
 
-{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Leos Investments Ltd{% endblock %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Di-VisioN{% endblock %}
 
 {% block branding %}
 <h1 id="site-name">
     <a href="{% url 'admin:index' %}">
-        <img src="{% static 'core/images/leos-logo.png' %}" alt="Leos Investments" height="40" style="vertical-align: middle; margin-right: 10px;">
-        Leos Investments Ltd
+        <img src="{% static 'core/images/division-logo.svg' %}" alt="Di-VisioN" height="40" style="vertical-align: middle; margin-right: 10px;">
+        Di-VisioN
     </a>
 </h1>
 {% endblock %}

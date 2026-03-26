@@ -1,7 +1,7 @@
 {% extends 'core/base.html' %}
 {% load static %}
 
-{% block title %}{% if shift %}Edit{% else %}New{% endif %} Shift - Leos Investments{% endblock %}
+{% block title %}{% if shift %}Edit{% else %}New{% endif %} Shift - Di-VisioN{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'core/css/professional.css' %}">
@@ -91,21 +91,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const standbyClientCheckbox = document.getElementById('id_standby_client');
     const standbyClientReason = document.getElementById('id_standby_client_reason');
     const standbyClientRemarks = document.getElementById('id_standby_client_remarks');
+    const standbyClientStartTime = document.getElementById('id_standby_client_start_time');
+    const standbyClientEndTime = document.getElementById('id_standby_client_end_time');
     
     const standbyConstructorCheckbox = document.getElementById('id_standby_constructor');
     const standbyConstructorReason = document.getElementById('id_standby_constructor_reason');
     const standbyConstructorRemarks = document.getElementById('id_standby_constructor_remarks');
-    
+    const standbyConstructorStartTime = document.getElementById('id_standby_constructor_start_time');
+    const standbyConstructorEndTime = document.getElementById('id_standby_constructor_end_time');    
     function toggleStandbyFields() {
         if (standbyClientCheckbox) {
             const isClientStandby = standbyClientCheckbox.checked;
             standbyClientReason.disabled = !isClientStandby;
             standbyClientRemarks.disabled = !isClientStandby;
+            standbyClientStartTime.disabled = !isClientStandby;
+            standbyClientEndTime.disabled = !isClientStandby;
             standbyClientReason.closest('.pro-form-group').style.opacity = isClientStandby ? '1' : '0.5';
             standbyClientRemarks.closest('.pro-form-group').style.opacity = isClientStandby ? '1' : '0.5';
+            standbyClientStartTime.closest('.pro-form-group').style.opacity = isClientStandby ? '1' : '0.5';
+            standbyClientEndTime.closest('.pro-form-group').style.opacity = isClientStandby ? '1' : '0.5';
             if (!isClientStandby) {
                 standbyClientReason.value = '';
                 standbyClientRemarks.value = '';
+                standbyClientStartTime.value = '';
+                standbyClientEndTime.value = '';
             }
         }
         
@@ -113,11 +122,17 @@ document.addEventListener('DOMContentLoaded', function() {
             const isConstructorStandby = standbyConstructorCheckbox.checked;
             standbyConstructorReason.disabled = !isConstructorStandby;
             standbyConstructorRemarks.disabled = !isConstructorStandby;
+            standbyConstructorStartTime.disabled = !isConstructorStandby;
+            standbyConstructorEndTime.disabled = !isConstructorStandby;
             standbyConstructorReason.closest('.pro-form-group').style.opacity = isConstructorStandby ? '1' : '0.5';
             standbyConstructorRemarks.closest('.pro-form-group').style.opacity = isConstructorStandby ? '1' : '0.5';
+            standbyConstructorStartTime.closest('.pro-form-group').style.opacity = isConstructorStandby ? '1' : '0.5';
+            standbyConstructorEndTime.closest('.pro-form-group').style.opacity = isConstructorStandby ? '1' : '0.5';
             if (!isConstructorStandby) {
                 standbyConstructorReason.value = '';
                 standbyConstructorRemarks.value = '';
+                standbyConstructorStartTime.value = '';
+                standbyConstructorEndTime.value = '';
             }
         }
     }
@@ -174,7 +189,219 @@ function addForm(prefix) {
         container.insertAdjacentHTML('beforeend', html);
     }
     totalInput.value = index + 1;
+    initProgressActionButtons();
 }
+
+let currentProgressEditRow = null;
+
+function initProgressActionButtons() {
+    const editButtons = document.querySelectorAll('.progress-edit-btn');
+    editButtons.forEach(btn => {
+        btn.removeEventListener('click', onClickEditProgress);
+        btn.addEventListener('click', onClickEditProgress);
+    });
+    const deleteButtons = document.querySelectorAll('.progress-delete-btn');
+    deleteButtons.forEach(btn => {
+        btn.removeEventListener('click', onClickDeleteProgress);
+        btn.addEventListener('click', onClickDeleteProgress);
+    });
+}
+
+function onClickEditProgress(event) {
+    const row = event.currentTarget.closest('tr');
+    if (!row) return;
+    currentProgressEditRow = row;
+    const prefix = getRowPrefix(row);
+    // Populate modal fields from row inputs
+    document.getElementById('progressModalHole').value = getField(row, 'hole_number').value;
+    document.getElementById('progressModalSize').value = getField(row, 'size').value;
+    document.getElementById('progressModalStart').value = getField(row, 'start_depth').value;
+    document.getElementById('progressModalEnd').value = getField(row, 'end_depth').value;
+    document.getElementById('progressModalMeters').value = getField(row, 'meters_drilled').value;
+    document.getElementById('progressModalLoss').value = getField(row, 'core_loss').value;
+    document.getElementById('progressModalGain').value = getField(row, 'core_gain').value;
+    document.getElementById('progressModalStartTime').value = getField(row, 'start_time').value;
+    document.getElementById('progressModalEndTime').value = getField(row, 'end_time').value;
+    document.getElementById('progressModalRemarks').value = getField(row, 'remarks').value;
+    
+    // Calculate and populate RPM
+    calculateRPM();
+    
+    document.getElementById('progressModalTitle').textContent = 'Edit Drilling Run';
+    document.getElementById('progressModalSave').textContent = 'Save Changes';
+    
+    // Add event listeners for RPM calculation
+    document.getElementById('progressModalStartTime').addEventListener('change', calculateRPM);
+    document.getElementById('progressModalEndTime').addEventListener('change', calculateRPM);
+    document.getElementById('progressModalMeters').addEventListener('input', calculateRPM);
+    
+    showModal('progressModal');
+}
+
+function onClickDeleteProgress(event) {
+    const row = event.currentTarget.closest('tr');
+    if (!row) return;
+    const delCheckbox = getField(row, 'DELETE');
+    if (delCheckbox) {
+        delCheckbox.checked = true;
+        row.style.display = 'none';
+    }
+}
+
+function getField(row, fieldName) {
+    return row.querySelector(`[name$="-${fieldName}"]`);
+}
+
+function getRowPrefix(row) {
+    const input = row.querySelector('input[name$="-id"]');
+    if (!input) return null;
+    const name = input.name;
+    return name.replace('-id', '');
+}
+
+function openProgressModal() {
+    currentProgressEditRow = null;
+    document.getElementById('progressForm').reset();
+    document.getElementById('progressModalImage').value = '';
+    document.getElementById('progressModalRPM').value = '';
+    document.getElementById('progressModalTitle').textContent = 'Add Drilling Run';
+    document.getElementById('progressModalSave').textContent = 'Add Run';
+    
+    // Add event listeners for RPM calculation
+    document.getElementById('progressModalStartTime').addEventListener('change', calculateRPM);
+    document.getElementById('progressModalEndTime').addEventListener('change', calculateRPM);
+    document.getElementById('progressModalMeters').addEventListener('input', calculateRPM);
+    
+    showModal('progressModal');
+}
+
+function saveProgressModal() {
+    const hole = document.getElementById('progressModalHole').value;
+    const size = document.getElementById('progressModalSize').value;
+    const start = document.getElementById('progressModalStart').value;
+    const end = document.getElementById('progressModalEnd').value;
+    let meters = document.getElementById('progressModalMeters').value;
+    const loss = document.getElementById('progressModalLoss').value;
+    const gain = document.getElementById('progressModalGain').value;
+    const startTime = document.getElementById('progressModalStartTime').value;
+    const endTime = document.getElementById('progressModalEndTime').value;
+    const remarks = document.getElementById('progressModalRemarks').value;
+    const imageInput = document.getElementById('progressModalImage');
+    
+    // Auto-calculate meters if both depths provided
+    if (!meters && start && end) {
+        meters = (parseFloat(end) - parseFloat(start)).toFixed(2);
+    }
+
+    if (currentProgressEditRow) {
+        // Edit existing row
+        setField(currentProgressEditRow, 'hole_number', hole);
+        setField(currentProgressEditRow, 'size', size);
+        setField(currentProgressEditRow, 'start_depth', start);
+        setField(currentProgressEditRow, 'end_depth', end);
+        setField(currentProgressEditRow, 'meters_drilled', meters);
+        setField(currentProgressEditRow, 'core_loss', loss);
+        setField(currentProgressEditRow, 'core_gain', gain);
+        setField(currentProgressEditRow, 'start_time', startTime);
+        setField(currentProgressEditRow, 'end_time', endTime);
+        setField(currentProgressEditRow, 'remarks', remarks);
+        // Handle file upload if user selected a new image
+        if (imageInput.files && imageInput.files.length > 0) {
+            const fileField = getField(currentProgressEditRow, 'core_tray_image');
+            if (fileField) {
+                fileField.files = imageInput.files;
+            }
+        }
+    } else {
+        // Add new row
+        const totalInput = document.getElementById('id_progress-TOTAL_FORMS');
+        const currentIndex = parseInt(totalInput.value, 10);
+        const tpl = document.getElementById('progress-empty-form');
+        if (!tpl) {
+            console.error('Progress empty form template not found');
+            closeModal('progressModal');
+            return;
+        }
+        const html = tpl.innerHTML.replace(/__prefix__/g, currentIndex);
+        const tbody = document.querySelector('#progress-table tbody');
+        tbody.insertAdjacentHTML('beforeend', html);
+        totalInput.value = currentIndex + 1;
+        
+        // Get the newly added row and populate it
+        const newRow = tbody.querySelector(`tr:last-child`);
+        if (newRow) {
+            setField(newRow, 'hole_number', hole);
+            setField(newRow, 'size', size);
+            setField(newRow, 'start_depth', start);
+            setField(newRow, 'end_depth', end);
+            setField(newRow, 'meters_drilled', meters);
+            setField(newRow, 'core_loss', loss);
+            setField(newRow, 'core_gain', gain);
+            setField(newRow, 'start_time', startTime);
+            setField(newRow, 'end_time', endTime);
+            setField(newRow, 'remarks', remarks);
+            // Handle file upload if user selected an image
+            if (imageInput.files && imageInput.files.length > 0) {
+                const fileField = getField(newRow, 'core_tray_image');
+                if (fileField) {
+                    fileField.files = imageInput.files;
+                }
+            }
+        }
+        
+        initProgressActionButtons();
+    }
+
+    closeModal('progressModal');
+}
+
+function calculateRPM() {
+    const startTime = document.getElementById('progressModalStartTime').value;
+    const endTime = document.getElementById('progressModalEndTime').value;
+    const meters = document.getElementById('progressModalMeters').value;
+    const rpmField = document.getElementById('progressModalRPM');
+    
+    if (startTime && endTime && meters && parseFloat(meters) > 0) {
+        // Calculate time difference in minutes
+        const start = new Date(`2000-01-01T${startTime}:00`);
+        const end = new Date(`2000-01-01T${endTime}:00`);
+        let diffMinutes = (end - start) / (1000 * 60);
+        
+        // Handle overnight shifts (end time before start time)
+        if (diffMinutes <= 0) {
+            diffMinutes += 24 * 60; // Add 24 hours in minutes
+        }
+        
+        // Calculate RPM (meters per minute)
+        const rpm = parseFloat(meters) / diffMinutes;
+        rpmField.value = rpm.toFixed(4);
+    } else {
+        rpmField.value = '';
+    }
+}
+
+function setField(row, fieldName, value) {
+    const field = getField(row, fieldName);
+    if (field) {
+        field.value = value;
+    }
+}
+
+function showModal(modalId) {
+    const el = document.getElementById(modalId);
+    if (!el) return;
+    el.style.display = 'block';
+}
+
+function closeModal(modalId) {
+    const el = document.getElementById(modalId);
+    if (!el) return;
+    el.style.display = 'none';
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+    initProgressActionButtons();
+});
 
 </script>
 {% endblock %}
@@ -307,6 +534,22 @@ function addForm(prefix) {
                         {{ form.standby_client_remarks }}
                         {{ form.standby_client_remarks.errors }}
                     </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="pro-form-group">
+                                <label for="{{ form.standby_client_start_time.id_for_label }}" class="pro-label">Start Time</label>
+                                {{ form.standby_client_start_time }}
+                                {{ form.standby_client_start_time.errors }}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="pro-form-group">
+                                <label for="{{ form.standby_client_end_time.id_for_label }}" class="pro-label">End Time</label>
+                                {{ form.standby_client_end_time }}
+                                {{ form.standby_client_end_time.errors }}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -333,6 +576,22 @@ function addForm(prefix) {
                         {{ form.standby_constructor_remarks }}
                         {{ form.standby_constructor_remarks.errors }}
                     </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="pro-form-group">
+                                <label for="{{ form.standby_constructor_start_time.id_for_label }}" class="pro-label">Start Time</label>
+                                {{ form.standby_constructor_start_time }}
+                                {{ form.standby_constructor_start_time.errors }}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="pro-form-group">
+                                <label for="{{ form.standby_constructor_end_time.id_for_label }}" class="pro-label">End Time</label>
+                                {{ form.standby_constructor_end_time }}
+                                {{ form.standby_constructor_end_time.errors }}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -342,7 +601,7 @@ function addForm(prefix) {
             <div class="pro-table-container">
                 <div class="pro-table-header">
                     <span class="pro-table-title">DRILLING PROGRESS</span>
-                    <button type="button" class="btn-pro-add" onclick="addForm('progress')">
+                    <button type="button" class="btn-pro-add" onclick="openProgressModal()">
                         + Add Run
                     </button>
                 </div>
@@ -356,6 +615,7 @@ function addForm(prefix) {
                     <table class="pro-table" id="progress-table">
                         <thead>
                             <tr>
+                                <th>Actions</th>
                                 <th>Hole #</th>
                                 <th>Size</th>
                                 <th>Start (m)</th>
@@ -372,7 +632,11 @@ function addForm(prefix) {
                         </thead>
                         <tbody>
                             {% for form in progress_formset %}
-                            <tr class="progress-form">
+                            <tr class="progress-form" data-row="{{ forloop.counter0 }}">
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-outline-primary progress-edit-btn" style="margin-right:4px;">Edit</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger progress-delete-btn">Delete</button>
+                                </td>
                                 {{ form.id }}
                                 <td>{{ form.hole_number }}</td>
                                 <td>{{ form.size }}</td>
@@ -395,6 +659,85 @@ function addForm(prefix) {
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal for drilling progress entry -->
+        <div id="progressModal" class="modal" tabindex="-1" role="dialog" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);z-index:1050;align-items:center;justify-content:center;">
+            <div class="modal-dialog" role="document" style="max-width:700px;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="progressModalTitle">Add Drilling Run</h5>
+                        <button type="button" class="btn-close" aria-label="Close" onclick="closeModal('progressModal')"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="progressForm">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">Hole #</label>
+                                    <input id="progressModalHole" class="form-control" type="text" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Size</label>
+                                    <select id="progressModalSize" class="form-select">
+                                        <option value="">Select bit size</option>
+                                        {% for val,label in progress_formset.empty_form.fields.size.choices %}
+                                            {% if val %}
+                                            <option value="{{ val }}">{{ label }}</option>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Start Depth (m)</label>
+                                    <input id="progressModalStart" class="form-control" type="number" step="0.01" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">End Depth (m)</label>
+                                    <input id="progressModalEnd" class="form-control" type="number" step="0.01" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Meters Drilled</label>
+                                    <input id="progressModalMeters" class="form-control" type="number" step="0.01" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Core Loss</label>
+                                    <input id="progressModalLoss" class="form-control" type="number" step="0.01" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Core Gain</label>
+                                    <input id="progressModalGain" class="form-control" type="number" step="0.01" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Start Time</label>
+                                    <input id="progressModalStartTime" class="form-control" type="time" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">End Time</label>
+                                    <input id="progressModalEndTime" class="form-control" type="time" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Rate of Penetration (RPM)</label>
+                                    <input id="progressModalRPM" class="form-control" type="number" step="0.01" readonly />
+                                    <small class="text-muted">Auto-calculated from time period</small>
+                                </div>
+                                <div class="col-md-12">
+                                    <label class="form-label">Core Tray Image</label>
+                                    <input id="progressModalImage" class="form-control" type="file" accept="image/*" />
+                                    <small class="text-muted">Optional: Upload a core tray sample image</small>
+                                </div>
+                                <div class="col-md-12">
+                                    <label class="form-label">Remarks</label>
+                                    <input id="progressModalRemarks" class="form-control" type="text" />
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('progressModal')">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="progressModalSave" onclick="saveProgressModal()">Add Run</button>
+                    </div>
                 </div>
             </div>
         </div>

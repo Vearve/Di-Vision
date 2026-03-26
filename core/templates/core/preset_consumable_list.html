@@ -1,0 +1,75 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Consumable Presets - Di-VisioN{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-box-seam"></i> Consumable Presets</h2>
+        <p class="text-muted mb-0">Manage consumable presets for your contractor workspace</p>
+    </div>
+    <div>
+        <a href="{% url 'core:consumable_preset_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New Consumable Preset
+        </a>
+        <a href="{% url 'core:preset_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to All Presets
+        </a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-light">
+        <strong>Your Consumable Presets</strong>
+    </div>
+    <div class="card-body">
+        {% if presets %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr class="text-muted">
+                        <th>Name</th>
+                        <th class="text-end">Rate Per Unit</th>
+                        <th>Unit</th>
+                        <th>Status</th>
+                        <th>Client Status</th>
+                        <th>Client</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for preset in presets %}
+                    <tr>
+                        <td><strong>{{ preset.name }}</strong></td>
+                        <td class="text-end">${{ preset.rate|floatformat:2 }}</td>
+                        <td>{{ preset.unit }}</td>
+                        <td>
+                            <span class="badge {% if preset.status == 'draft' %}bg-secondary{% else %}bg-info{% endif %}">
+                                {{ preset.get_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {% if preset.client_status == 'approved' %}bg-success{% elif preset.client_status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                {{ preset.get_client_status_display }}
+                            </span>
+                        </td>
+                        <td>{{ preset.submitted_to_client.name|default:'—' }}</td>
+                        <td class="text-end">
+                            <a href="{% url 'core:consumable_preset_detail' preset.pk %}" class="btn btn-sm btn-outline-primary">
+                                View
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-center text-muted py-4">
+            <i class="bi bi-inbox"></i> No consumable presets created yet.
+            <a href="{% url 'core:consumable_preset_create' %}" class="link-primary">Create one now</a>
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

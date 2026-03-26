@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import preset_views
 
 app_name = 'core'
 
@@ -22,9 +23,49 @@ urlpatterns = [
     path('shifts/<int:pk>/submit-to-client/', views.shift_submit_to_client, name='shift_submit_to_client'),
     path('shifts/<int:pk>/client-approve/', views.client_approve_shift, name='client_approve_shift'),
     path('client-dashboard/', views.client_dashboard, name='client_dashboard'),
+    path('boq/', views.boq_report_list, name='boq_report_list'),
+    path('boq/create/', views.boq_report_create, name='boq_report_create'),
+    path('boq/<int:pk>/', views.boq_report_detail, name='boq_report_detail'),
+    path('boq/<int:pk>/export/', views.boq_report_export, name='boq_report_export'),
+    path('boq/<int:pk>/additional-charge/add/', views.boq_add_additional_charge, name='boq_add_additional_charge'),
+    path('boq/<int:pk>/additional-charge/<int:charge_pk>/action/', views.boq_update_additional_charge, name='boq_update_additional_charge'),
+    path('boq/<int:pk>/submit/', views.boq_submit_to_client, name='boq_submit_to_client'),
+    path('boq/<int:pk>/review/', views.client_review_boq, name='client_review_boq'),
     
     # Export functionality
     path('export/shifts/', views.export_shifts, name='export_shifts'),
     path('export/boq/', views.export_boq, name='export_boq'),
     path('shifts/<int:pk>/export/pdf/', views.shift_pdf_export, name='shift_pdf_export'),
+    
+    # ── Client Preset Approval ──────────────────────────────────────────────────
+    path('presets/approval/', preset_views.client_preset_approval_dashboard, name='client_preset_approval_dashboard'),
+    
+    # ── Presets (Unified) ───────────────────────────────────────────────────────
+    path('presets/', preset_views.preset_list, name='preset_list'),
+    
+    # ── Drill Size Presets ──────────────────────────────────────────────────────
+    path('presets/drill-size/', preset_views.drill_size_preset_list, name='drill_size_preset_list'),
+    path('presets/drill-size/create/', preset_views.drill_size_preset_create, name='drill_size_preset_create'),
+    path('presets/drill-size/<int:pk>/', preset_views.drill_size_preset_detail, name='drill_size_preset_detail'),
+    path('presets/drill-size/<int:pk>/edit/', preset_views.drill_size_preset_edit, name='drill_size_preset_edit'),
+    path('presets/drill-size/<int:pk>/submit/', preset_views.drill_size_preset_submit, name='drill_size_preset_submit'),
+    path('presets/drill-size/<int:pk>/approve/', preset_views.drill_size_preset_approve, name='drill_size_preset_approve'),
+    
+    # ── Equipment Presets ───────────────────────────────────────────────────────
+    path('presets/equipment/', preset_views.equipment_preset_list, name='equipment_preset_list'),
+    path('presets/equipment/create/', preset_views.equipment_preset_create, name='equipment_preset_create'),
+    path('presets/equipment/<int:pk>/', preset_views.equipment_preset_detail, name='equipment_preset_detail'),
+    
+    # ── Consumable Presets ──────────────────────────────────────────────────────
+    path('presets/consumable/', preset_views.consumable_preset_list, name='consumable_preset_list'),
+    path('presets/consumable/create/', preset_views.consumable_preset_create, name='consumable_preset_create'),
+    path('presets/consumable/<int:pk>/', preset_views.consumable_preset_detail, name='consumable_preset_detail'),
+    
+    # ── Additional Charge Presets ───────────────────────────────────────────────
+    path('presets/additional-charge/', preset_views.additional_charge_preset_list, name='additional_charge_preset_list'),
+    path('presets/additional-charge/create/', preset_views.additional_charge_preset_create, name='additional_charge_preset_create'),
+    path('presets/additional-charge/<int:pk>/', preset_views.additional_charge_preset_detail, name='additional_charge_preset_detail'),
+    path('presets/additional-charge/<int:pk>/edit/', preset_views.additional_charge_preset_edit, name='additional_charge_preset_edit'),
+    path('presets/additional-charge/<int:pk>/submit/', preset_views.additional_charge_preset_submit, name='additional_charge_preset_submit'),
+    path('presets/additional-charge/<int:pk>/approve/', preset_views.additional_charge_preset_approve, name='additional_charge_preset_approve'),
 ]

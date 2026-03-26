@@ -1,0 +1,133 @@
+{% extends 'core/base.html' %}
+
+{% block title %}{% if is_client_view %}BOQ Reports{% else %}BOQ Drafts{% endif %} - Di-VisioN{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">{% if is_client_view %}BOQ Reports{% else %}BOQ Drafts{% endif %}</h2>
+        <p class="text-muted mb-0">
+            {% if is_client_view %}
+            Review period-based BOQ submissions and approve or reject them with comments.
+            {% else %}
+            Draft BOQ reports by client and drilling period, then submit them to the client for invoice approval.
+            {% endif %}
+        </p>
+    </div>
+    {% if not is_client_view %}
+    <a href="{% url 'core:boq_report_create' %}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> New BOQ Draft
+    </a>
+    {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm"><div class="card-body text-center"><h6 class="text-muted">Draft</h6><h3 class="mb-0">{{ draft_count }}</h3></div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm"><div class="card-body text-center"><h6 class="text-muted">Submitted</h6><h3 class="mb-0 text-primary">{{ submitted_count }}</h3></div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm"><div class="card-body text-center"><h6 class="text-muted">Client Approved</h6><h3 class="mb-0 text-success">{{ client_approved_count }}</h3></div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm"><div class="card-body text-center"><h6 class="text-muted">Client Rejected</h6><h3 class="mb-0 text-danger">{{ client_rejected_count }}</h3></div></div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            {% if not is_client_view %}
+            <div class="col-md-3">
+                <label class="form-label">Client</label>
+                <select name="client" class="form-select">
+                    <option value="">All clients</option>
+                    {% for client in available_clients %}
+                    <option value="{{ client.id }}" {% if selected_client_id == client.id|stringformat:'s' %}selected{% endif %}>{{ client.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-md-2">
+                <label class="form-label">Contractor Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All</option>
+                    {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Client Decision</label>
+                <select name="client_status" class="form-select">
+                    <option value="">All</option>
+                    {% for value, label in client_status_choices %}
+                    <option value="{{ value }}" {% if request.GET.client_status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Period Start</label>
+                <input type="date" name="start_date" class="form-control" value="{{ request.GET.start_date }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Period End</label>
+                <input type="date" name="end_date" class="form-control" value="{{ request.GET.end_date }}">
+            </div>
+            <div class="col-md-1 d-grid">
+                <button type="submit" class="btn btn-outline-primary"><i class="bi bi-funnel"></i></button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Title</th>
+                        {% if not is_client_view %}<th>Client</th>{% endif %}
+                        <th>Period</th>
+                        <th>Contractor Status</th>
+                        <th>Client Status</th>
+                        <th>Submitted</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                    <tr>
+                        <td>
+                            <strong>{{ report.title }}</strong><br>
+                            <small class="text-muted">Created by {{ report.created_by.username }}</small>
+                        </td>
+                        {% if not is_client_view %}<td>{{ report.client.name }}</td>{% endif %}
+                        <td>{{ report.period_start }} to {{ report.period_end }}</td>
+                        <td><span class="badge {% if report.status == 'draft' %}bg-secondary{% else %}bg-primary{% endif %}">{{ report.get_status_display }}</span></td>
+                        <td>
+                            <span class="badge {% if report.client_status == 'approved' %}bg-success{% elif report.client_status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                {{ report.get_client_status_display }}
+                            </span>
+                        </td>
+                        <td>{{ report.submitted_to_client_at|default:'--' }}</td>
+                        <td>
+                            <a href="{% url 'core:boq_report_detail' report.pk %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i> Open
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">No BOQ reports match the current filters.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

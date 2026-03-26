@@ -1,22 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100">
-  <!-- Di-VisioN Logo Placeholder -->
+  <!-- Di-VisioN Logo -->
   <defs>
     <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" style="stop-color:#8B1F1F;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#C49A6C;stop-opacity:1" />
     </linearGradient>
   </defs>
-  
-  <!-- Lion Head Silhouette -->
+
+  <!-- Lion mark -->
   <circle cx="50" cy="50" r="35" fill="url(#grad1)" opacity="0.2"/>
-  <path d="M 50 25 Q 35 30 30 45 Q 28 55 35 60 Q 40 63 45 60 L 50 70 L 55 60 Q 60 63 65 60 Q 72 55 70 45 Q 65 30 50 25 Z" 
+  <path d="M 50 25 Q 35 30 30 45 Q 28 55 35 60 Q 40 63 45 60 L 50 70 L 55 60 Q 60 63 65 60 Q 72 55 70 45 Q 65 30 50 25 Z"
         fill="#8B1F1F"/>
   <circle cx="42" cy="45" r="3" fill="white"/>
   <circle cx="58" cy="45" r="3" fill="white"/>
-  
+
   <!-- Text -->
   <text x="95" y="45" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#2C3E50">
-    DI-VISION
+    Di-VisioN
   </text>
   <text x="95" y="70" font-family="Arial, sans-serif" font-size="14" fill="#6C757D">
     DAILY DRILL REPORT

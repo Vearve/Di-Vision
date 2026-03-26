@@ -108,6 +108,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.user_workspace',
             ],
         },
     },
@@ -211,6 +212,6 @@ LOGOUT_REDIRECT_URL = 'accounts:login'
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 # Admin site customization
-ADMIN_SITE_HEADER = 'Leos Investments Ltd'
-ADMIN_SITE_TITLE = 'Leos Admin'
+ADMIN_SITE_HEADER = 'Di-VisioN'
+ADMIN_SITE_TITLE = 'Di-VisioN Admin'
 ADMIN_INDEX_TITLE = 'Daily Shift Report Administration'

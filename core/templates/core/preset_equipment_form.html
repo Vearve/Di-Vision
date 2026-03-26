@@ -1,0 +1,100 @@
+{% extends 'core/base.html' %}
+
+{% block title %}{% if form.instance.pk %}Edit{% else %}Create{% endif %} Equipment Preset - Di-VisioN{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">
+                    <i class="bi bi-tools"></i>
+                    {% if form.instance.pk %}
+                        Edit Equipment Preset
+                    {% else %}
+                        Create New Equipment Preset
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post" class="needs-validation">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="{{ form.name.id_for_label }}" class="form-label">Equipment Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control {% if form.name.errors %}is-invalid{% endif %}" id="{{ form.name.id_for_label }}" name="name" value="{{ form.name.value|default:'' }}" required placeholder="e.g., Drilling Rig, Water Truck">
+                        {% if form.name.errors %}
+                        <div class="invalid-feedback d-block">{{ form.name.errors.0 }}</div>
+                        {% endif %}
+                        <small class="text-muted">Name of the equipment to be used</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.period.id_for_label }}" class="form-label">Billing Period <span class="text-danger">*</span></label>
+                        <select class="form-select {% if form.period.errors %}is-invalid{% endif %}" id="{{ form.period.id_for_label }}" name="period" required>
+                            <option value="">Select period...</option>
+                            <option value="daily" {% if form.period.value == 'daily' %}selected{% endif %}>Daily</option>
+                            <option value="hourly" {% if form.period.value == 'hourly' %}selected{% endif %}>Hourly</option>
+                        </select>
+                        {% if form.period.errors %}
+                        <div class="invalid-feedback d-block">{{ form.period.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.rate.id_for_label }}" class="form-label">Rate ($) <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control {% if form.rate.errors %}is-invalid{% endif %}" id="{{ form.rate.id_for_label }}" name="rate" value="{{ form.rate.value|default:'' }}" step="0.01" required placeholder="0.00">
+                            <span class="input-group-text" id="rate-period">/day</span>
+                        </div>
+                        {% if form.rate.errors %}
+                        <div class="invalid-feedback d-block">{{ form.rate.errors.0 }}</div>
+                        {% endif %}
+                        <small class="text-muted">Cost per billing period</small>
+                    </div>
+
+                    <div class="alert alert-info" role="alert">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Note:</strong> Once you submit this preset to a client and they approve it, the rate becomes locked and cannot be changed.
+                    </div>
+
+                    <div class="d-grid gap-2 d-sm-flex justify-content-sm-end">
+                        <a href="{% url 'core:preset_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> {% if form.instance.pk %}Update{% else %}Create{% endif %} Preset
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+                <h6 class="mb-0">Help</h6>
+            </div>
+            <div class="card-body">
+                <h6>Equipment Presets</h6>
+                <p class="text-muted small">Define costs for equipment used in drilling operations. Equipment can be billed daily or hourly.</p>
+                
+                <h6 class="mt-3">Examples</h6>
+                <ul class="text-muted small">
+                    <li>Drilling Rig - $500/day</li>
+                    <li>Water Truck - $100/day</li>
+                    <li>Generator - $50/day</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Update period label when period changes
+document.getElementById('{{ form.period.id_for_label }}').addEventListener('change', function() {
+    const periodLabel = document.getElementById('rate-period');
+    periodLabel.textContent = this.value === 'hourly' ? '/hour' : '/day';
+});
+</script>
+{% endblock %}

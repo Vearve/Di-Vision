@@ -24,8 +24,19 @@
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2>{{ client.name }} - Daily Shift Reports</h2>
-            <p class="text-muted mb-0">Review and approve your shift reports</p>
+            <h2>{{ client.name }} Client Dashboard</h2>
+            <p class="text-muted mb-0">Review submitted drilling shifts and BOQ packages for your company.</p>
+        </div>
+    </div>
+
+    <div class="mb-4">
+        <div class="btn-group" role="group" aria-label="Client navigation">
+            <a href="{% url 'core:client_dashboard' %}" class="btn btn-primary active">
+                <i class="bi bi-building"></i> Shift Dashboard
+            </a>
+            <a href="{% url 'core:boq_report_list' %}" class="btn btn-outline-primary">
+                <i class="bi bi-receipt"></i> BOQ Reports
+            </a>
         </div>
     </div>
 
@@ -63,39 +74,101 @@
                 </div>
             </div>
         </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">BOQ Reports</h6>
+                    <div class="d-flex justify-content-center gap-3 small">
+                        <span class="text-warning">Pending: {{ boq_pending_count }}</span>
+                        <span class="text-success">Approved: {{ boq_approved_count }}</span>
+                        <span class="text-danger">Rejected: {{ boq_rejected_count }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Filters -->
     <div class="card mb-4 border-0 shadow-sm">
-        <div class="card-body">
-            <form method="get" class="row g-3">
-                <div class="col-md-3">
-                    <label class="form-label">Status</label>
-                    <select name="client_status" class="form-select">
-                        <option value="">All Statuses</option>
+        <div class="card-body py-3">
+            <form method="get" class="row g-2 align-items-end">
+                <!-- Period quick-select -->
+                <div class="col-12">
+                    <label class="form-label text-muted small mb-1">Period</label>
+                    <div class="btn-group d-flex flex-wrap gap-1" role="group">
+                        {% for p_val, p_label in period_options %}
+                        <input type="radio" class="btn-check" name="period" id="cd_period_{{ p_val }}" value="{{ p_val }}" autocomplete="off" {% if period == p_val %}checked{% endif %}>
+                        <label class="btn btn-sm {% if period == p_val %}btn-primary{% else %}btn-outline-secondary{% endif %}" for="cd_period_{{ p_val }}">{{ p_label }}</label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <!-- Year -->
+                <div class="col-6 col-md-2" id="cd_yearFieldGroup">
+                    <label class="form-label text-muted small mb-1">Year</label>
+                    <input type="number" name="year" class="form-control form-control-sm" value="{{ year_str }}" min="2020" max="2035">
+                </div>
+                <!-- Custom date range -->
+                <div class="col-6 col-md-2" id="cd_dateFromGroup">
+                    <label class="form-label text-muted small mb-1">From</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from_str }}">
+                </div>
+                <div class="col-6 col-md-2" id="cd_dateToGroup">
+                    <label class="form-label text-muted small mb-1">To</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to_str }}">
+                </div>
+                <!-- Status filter -->
+                <div class="col-md-2">
+                    <label class="form-label text-muted small mb-1">Status</label>
+                    <select name="client_status" class="form-select form-select-sm">
+                        <option value="">All</option>
                         {% for value, label in client_status_choices %}
-                        <option value="{{ value }}" {% if request.GET.client_status == value %}selected{% endif %}>
-                            {{ label }}
-                        </option>
+                        <option value="{{ value }}" {% if request.GET.client_status == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                 </div>
+                <!-- Contractor filter -->
+                {% if contractor_workspaces %}
                 <div class="col-md-3">
-                    <label class="form-label">Start Date</label>
-                    <input type="date" name="start_date" class="form-control" value="{{ request.GET.start_date }}">
+                    <label class="form-label text-muted small mb-1">Contractor</label>
+                    <select name="contractor_workspace_id" class="form-select form-select-sm">
+                        <option value="">All Contractors</option>
+                        {% for ws in contractor_workspaces %}
+                        <option value="{{ ws.pk }}" {% if contractor_ws_id == ws.pk|stringformat:"i" %}selected{% endif %}>{{ ws.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">End Date</label>
-                    <input type="date" name="end_date" class="form-control" value="{{ request.GET.end_date }}">
+                {% endif %}
+                <!-- Apply / Clear -->
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel-fill"></i> Apply</button>
                 </div>
-                <div class="col-md-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="bi bi-funnel"></i> Filter
-                    </button>
+                {% if period != 'this_month' or request.GET.client_status or contractor_ws_id %}
+                <div class="col-auto">
+                    <a href="{% url 'core:client_dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle"></i> Clear</a>
                 </div>
+                {% endif %}
             </form>
+            <div class="mt-2 small text-muted">
+                Showing: <strong>{{ period_label }}</strong>
+                {% if contractor_ws_id %} · Contractor filtered{% endif %}
+            </div>
         </div>
     </div>
+    <script>
+    (function () {
+        function syncCdPeriod() {
+            var period = document.querySelector('input[name="period"]:checked');
+            var val = period ? period.value : 'this_month';
+            document.getElementById('cd_yearFieldGroup').style.display = (val === 'year') ? '' : 'none';
+            document.getElementById('cd_dateFromGroup').style.display = (val === 'custom') ? '' : 'none';
+            document.getElementById('cd_dateToGroup').style.display = (val === 'custom') ? '' : 'none';
+        }
+        document.querySelectorAll('input[name="period"]').forEach(function(r) {
+            r.addEventListener('change', syncCdPeriod);
+        });
+        syncCdPeriod();
+    })();
+    </script>
 
     <!-- Shifts Table -->
     <div class="card border-0 shadow-sm">

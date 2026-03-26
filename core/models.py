@@ -1,7 +1,83 @@
 from django.db import models
+from django.db.models import Sum
 from django.conf import settings
 from django.utils import timezone
+from django.utils.text import slugify
+from django.core.exceptions import ValidationError
 from decimal import Decimal
+
+
+class Workspace(models.Model):
+    """
+    Represents a company workspace — either a client company or a contractor company.
+    Used for multi-tenant data scoping and branding in exports / UI.
+    """
+    WORKSPACE_CLIENT = 'client'
+    WORKSPACE_CONTRACTOR = 'contractor'
+    WORKSPACE_TYPE_CHOICES = [
+        (WORKSPACE_CLIENT, 'Client Company'),
+        (WORKSPACE_CONTRACTOR, 'Contractor Company'),
+    ]
+
+    name = models.CharField(max_length=200, unique=True)
+    slug = models.SlugField(unique=True, blank=True)
+    workspace_type = models.CharField(max_length=20, choices=WORKSPACE_TYPE_CHOICES)
+    logo = models.ImageField(upload_to='workspace_logos/', blank=True, null=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_workspace_type_display()})"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.name) or 'workspace'
+            slug = base
+            n = 1
+            while Workspace.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f"{base}-{n}"
+                n += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+
+class WorkspaceMembership(models.Model):
+    """
+    Links a user to a workspace with a specific role.
+    A user can belong to multiple workspaces (e.g. a contractor working for multiple clients).
+    """
+    ROLE_OWNER = 'owner'
+    ROLE_MEMBER = 'member'
+    ROLE_VIEWER = 'viewer'
+    ROLE_CHOICES = [
+        (ROLE_OWNER, 'Owner'),
+        (ROLE_MEMBER, 'Member'),
+        (ROLE_VIEWER, 'Viewer'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='workspace_memberships',
+    )
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name='memberships',
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_MEMBER)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        unique_together = [('user', 'workspace')]
+        ordering = ['workspace__name', 'role']
+
+    def __str__(self):
+        return f"{self.user.username} @ {self.workspace.name} ({self.role})"
 
 
 class Client(models.Model):
@@ -18,6 +94,13 @@ class Client(models.Model):
         is_active: Whether client is currently active
     """
     name = models.CharField(max_length=255, unique=True)
+    workspace = models.OneToOneField(
+        Workspace,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='client_link',
+        help_text="Linked workspace for this client company",
+    )
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='client_profile', help_text="User account for client login")
     contact_person = models.CharField(max_length=255, blank=True)
     email = models.EmailField(blank=True)
@@ -30,6 +113,16 @@ class Client(models.Model):
         ordering = ['name']
     
     def __str__(self):
+        # Prefer workspace name if configured, otherwise fallback to client company name.
+        if self.workspace:
+            return self.workspace.name
+
+        # If workspace is not set, but client has a user membership, use that workspace name.
+        if self.user:
+            membership = self.user.workspace_memberships.first()
+            if membership and membership.workspace:
+                return membership.workspace.name
+
         return self.name
 
 
@@ -87,6 +180,14 @@ class DrillShift(models.Model):
 
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='shifts')
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='shifts', null=True, blank=True)
+    contractor_workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='contractor_shifts',
+        limit_choices_to={'workspace_type': Workspace.WORKSPACE_CONTRACTOR},
+        help_text="Contractor company that performed this shift",
+    )
     date = models.DateField()
     shift_type = models.CharField(max_length=16, choices=SHIFT_TYPE_CHOICES, default=SHIFT_DAY)
     rig = models.CharField(max_length=128, blank=True)
@@ -140,10 +241,14 @@ class DrillShift(models.Model):
     standby_client = models.BooleanField(default=False, help_text="Standby due to client reasons")
     standby_client_reason = models.CharField(max_length=50, choices=STANDBY_CLIENT_REASONS, blank=True)
     standby_client_remarks = models.TextField(blank=True, help_text="Additional details about client standby")
+    standby_client_start_time = models.TimeField(null=True, blank=True, help_text="Start time of client standby")
+    standby_client_end_time = models.TimeField(null=True, blank=True, help_text="End time of client standby")
     
     standby_constructor = models.BooleanField(default=False, help_text="Standby due to constructor reasons")
     standby_constructor_reason = models.CharField(max_length=50, choices=STANDBY_CONSTRUCTOR_REASONS, blank=True)
     standby_constructor_remarks = models.TextField(blank=True, help_text="Additional details about constructor standby")
+    standby_constructor_start_time = models.TimeField(null=True, blank=True, help_text="Start time of constructor standby")
+    standby_constructor_end_time = models.TimeField(null=True, blank=True, help_text="End time of constructor standby")
     
     # Client approval fields
     client_status = models.CharField(max_length=32, choices=CLIENT_STATUS_CHOICES, null=True, blank=True, help_text="Client approval status")
@@ -298,6 +403,9 @@ class ActivityLog(models.Model):
         ('maintenance', 'Maintenance'),
         ('safety', 'Safety'),
         ('meeting', 'Meeting'),
+        ('hole_conditioning', 'Hole Conditioning'),
+        ('trip_rods', 'Trip Rods'),
+        ('mobilising', 'Mobilising'),
         ('other', 'Other'),
     ]
 
@@ -436,6 +544,246 @@ class Casing(models.Model):
         return f"{self.casing_size} {self.get_casing_type_display()} - {self.start_depth}m to {self.end_depth}m"
 
 
+class BOQReport(models.Model):
+    """Period-based BOQ package prepared by the contractor and reviewed by the client."""
+
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SUBMITTED, 'Submitted to Client'),
+    ]
+
+    CLIENT_PENDING = 'pending'
+    CLIENT_APPROVED = 'approved'
+    CLIENT_REJECTED = 'rejected'
+
+    CLIENT_STATUS_CHOICES = [
+        (CLIENT_PENDING, 'Pending Client Review'),
+        (CLIENT_APPROVED, 'Approved by Client'),
+        (CLIENT_REJECTED, 'Rejected by Client'),
+    ]
+
+    title = models.CharField(max_length=255)
+    client = models.ForeignKey('Client', on_delete=models.PROTECT, related_name='boq_reports')
+    contractor_workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='contractor_boq_reports',
+        limit_choices_to={'workspace_type': Workspace.WORKSPACE_CONTRACTOR},
+        help_text="Contractor company for this BOQ",
+    )
+    period_start = models.DateField()
+    period_end = models.DateField()
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    client_status = models.CharField(max_length=16, choices=CLIENT_STATUS_CHOICES, default=CLIENT_PENDING)
+    contractor_comments = models.TextField(blank=True)
+    client_comments = models.TextField(blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_boq_reports')
+    submitted_to_client_at = models.DateTimeField(null=True, blank=True)
+    client_reviewed_at = models.DateTimeField(null=True, blank=True)
+    client_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_boq_reports'
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-period_end', '-created_at']
+
+    def __str__(self):
+        return f"{self.client.name} BOQ ({self.period_start} to {self.period_end})"
+
+    def clean(self):
+        if self.period_end < self.period_start:
+            raise ValidationError({'period_end': 'Period end must be on or after the start date.'})
+
+    def get_shifts_queryset(self):
+        return DrillShift.objects.filter(
+            client=self.client,
+            date__range=[self.period_start, self.period_end],
+            status=DrillShift.STATUS_APPROVED,
+        ).select_related('client', 'created_by').prefetch_related('progress', 'materials')
+
+    def get_total_meters(self):
+        total = DrillingProgress.objects.filter(
+            shift__in=self.get_shifts_queryset()
+        ).aggregate(total=Sum('meters_drilled'))['total']
+        return total or Decimal('0.00')
+
+    def get_total_shifts(self):
+        return self.get_shifts_queryset().count()
+
+    def get_materials_summary(self):
+        return MaterialUsed.objects.filter(
+            shift__in=self.get_shifts_queryset()
+        ).values('material_name', 'unit').annotate(
+            total_quantity=Sum('quantity')
+        ).order_by('material_name')
+
+    def get_line_items_by_type(self):
+        """Returns line items grouped by item_type as a dictionary."""
+        items = self.line_items.all().order_by('item_type', 'item_name')
+        return {
+            'drill_size': [item for item in items if item.item_type == 'drill_size'],
+            'equipment': [item for item in items if item.item_type == 'equipment'],
+            'consumable': [item for item in items if item.item_type == 'consumable'],
+        }
+
+    def get_total_by_type(self):
+        """Returns total cost for each item type as a dictionary."""
+        items = self.line_items.all()
+        totals = {
+            'drill_size': Decimal('0.00'),
+            'equipment': Decimal('0.00'),
+            'consumable': Decimal('0.00'),
+        }
+        for item in items:
+            totals[item.item_type] = totals.get(item.item_type, Decimal('0.00')) + (item.total_amount or Decimal('0.00'))
+        return totals
+
+    def get_additional_charges_total(self):
+        """Returns effective additional charges that are approved by both sides."""
+        total = self.additional_charges.filter(
+            contractor_approved=True,
+            client_approved=True,
+            is_rejected=False,
+        ).aggregate(total=Sum('amount'))['total']
+        return total or Decimal('0.00')
+
+    def get_grand_total(self):
+        """Returns the sum of all BOQLineItem total_amount values plus approved additional charges."""
+        total = self.line_items.aggregate(
+            grand_total=Sum('total_amount')
+        )['grand_total'] or Decimal('0.00')
+        total += self.get_additional_charges_total()
+        return total or Decimal('0.00')
+
+
+class BOQLineItem(models.Model):
+    """
+    Individual line items in a BOQ, linked to approved presets.
+    
+    Stores drill sizes, equipment, and consumables charges with locked rates
+    from the approved presets. Enables detailed breakdown in BOQ exports.
+    """
+    ITEM_TYPE_DRILL_SIZE = 'drill_size'
+    ITEM_TYPE_EQUIPMENT = 'equipment'
+    ITEM_TYPE_CONSUMABLE = 'consumable'
+    ITEM_TYPE_ADDITIONAL_CHARGE = 'additional_charge'
+    
+    ITEM_TYPE_CHOICES = [
+        (ITEM_TYPE_DRILL_SIZE, 'Drill Size'),
+        (ITEM_TYPE_EQUIPMENT, 'Equipment'),
+        (ITEM_TYPE_CONSUMABLE, 'Consumable'),
+        (ITEM_TYPE_ADDITIONAL_CHARGE, 'Additional Charge'),
+    ]
+    
+    boq_report = models.ForeignKey(BOQReport, on_delete=models.CASCADE, related_name='line_items')
+    
+    item_type = models.CharField(max_length=20, choices=ITEM_TYPE_CHOICES)
+    item_name = models.CharField(max_length=255, help_text="Name of drill size, equipment, or consumable")
+    quantity = models.DecimalField(max_digits=12, decimal_places=3, help_text="Quantity (meters, days, units, etc.)")
+    unit = models.CharField(max_length=50, help_text="Unit of measurement (m, day, hr, unit, etc.)")
+    locked_rate = models.DecimalField(max_digits=10, decimal_places=2, help_text="Rate locked from approved preset")
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, help_text="Quantity × Rate (auto-calculated)")
+    
+    # Link to the approved preset (if applicable)
+    drill_size_preset = models.ForeignKey(
+        'DrillSizePreset',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='boq_line_items'
+    )
+    equipment_preset = models.ForeignKey(
+        'EquipmentPreset',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='boq_line_items'
+    )
+    consumable_preset = models.ForeignKey(
+        'ConsumablePreset',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='boq_line_items'
+    )
+    additional_charge_preset = models.ForeignKey(
+        'AdditionalChargePreset',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='boq_line_items'
+    )
+    
+    notes = models.TextField(blank=True, help_text="Additional notes about this line item")
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['item_type', 'item_name']
+    
+    def save(self, *args, **kwargs):
+        """Auto-calculate total amount before saving."""
+        if self.quantity and self.locked_rate:
+            self.total_amount = self.quantity * self.locked_rate
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.item_name} - {self.quantity} {self.unit} @ ${self.locked_rate}"
+
+
+class BOQAdditionalCharge(models.Model):
+    """Variable extra charges that must be approved by both contractor and client."""
+
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
+
+    boq_report = models.ForeignKey(BOQReport, on_delete=models.CASCADE, related_name='additional_charges')
+    description = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, help_text='Use negative values for discounts / credits.')
+    proposed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='proposed_additional_charges')
+
+    contractor_approved = models.BooleanField(default=False)
+    client_approved = models.BooleanField(default=False)
+    is_rejected = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    @property
+    def status(self):
+        if self.is_rejected:
+            return self.STATUS_REJECTED
+        if self.contractor_approved and self.client_approved:
+            return self.STATUS_APPROVED
+        return self.STATUS_PENDING
+
+    @property
+    def effective_amount(self):
+        return self.amount if self.status == self.STATUS_APPROVED else Decimal('0.00')
+
+    def get_status_display(self):
+        return dict(self.STATUS_CHOICES).get(self.status, 'Unknown')
+
+    def __str__(self):
+        return f"{self.description} ({self.amount}) [{self.status}]"
+
+
 class ApprovalHistory(models.Model):
     """
     Tracks the approval workflow history for drill shifts.
@@ -552,3 +900,277 @@ class Alert(models.Model):
         self.acknowledged_by = user
         self.acknowledged_at = timezone.now()
         self.save()
+
+
+class DrillSizePreset(models.Model):
+    """
+    Preset rates for drill sizes (PQ, HQ, NQ, etc.).
+    Contractors create presets and submit them to clients for approval.
+    Approved presets auto-populate BOQ line items.
+    """
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SUBMITTED, 'Submitted to Client'),
+    ]
+
+    CLIENT_PENDING = 'pending'
+    CLIENT_APPROVED = 'approved'
+    CLIENT_REJECTED = 'rejected'
+    CLIENT_STATUS_CHOICES = [
+        (CLIENT_PENDING, 'Pending Client Approval'),
+        (CLIENT_APPROVED, 'Approved by Client'),
+        (CLIENT_REJECTED, 'Rejected by Client'),
+    ]
+
+    contractor_workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name='drill_size_presets',
+        limit_choices_to={'workspace_type': Workspace.WORKSPACE_CONTRACTOR},
+    )
+    submitted_to_client = models.ForeignKey(
+        Client,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='drill_size_presets_submitted',
+        help_text="Client this preset was submitted to for approval"
+    )
+
+    name = models.CharField(max_length=50, help_text="e.g., PQ, HQ, NQ, BQ")
+    rate_per_meter = models.DecimalField(max_digits=10, decimal_places=2, help_text="Rate in currency per meter")
+    
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    client_status = models.CharField(max_length=16, choices=CLIENT_STATUS_CHOICES, null=True, blank=True)
+    
+    submitted_to_client_at = models.DateTimeField(null=True, blank=True)
+    client_approved_at = models.DateTimeField(null=True, blank=True)
+    client_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='approved_drill_size_presets'
+    )
+    client_comments = models.TextField(blank=True, help_text="Client feedback on the preset")
+    
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_drill_size_presets')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        unique_together = [('contractor_workspace', 'name', 'submitted_to_client')]
+
+    def __str__(self):
+        return f"{self.name} - {self.contractor_workspace.name} (${self.rate_per_meter}/m)"
+
+
+class EquipmentPreset(models.Model):
+    """
+    Preset rates for equipment rental (Gyro, TLB, Orientation Tool, etc.).
+    Contractors create presets and submit them to clients for approval.
+    """
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SUBMITTED, 'Submitted to Client'),
+    ]
+
+    CLIENT_PENDING = 'pending'
+    CLIENT_APPROVED = 'approved'
+    CLIENT_REJECTED = 'rejected'
+    CLIENT_STATUS_CHOICES = [
+        (CLIENT_PENDING, 'Pending Client Approval'),
+        (CLIENT_APPROVED, 'Approved by Client'),
+        (CLIENT_REJECTED, 'Rejected by Client'),
+    ]
+
+    PERIOD_DAILY = 'daily'
+    PERIOD_HOURLY = 'hourly'
+    PERIOD_CHOICES = [
+        (PERIOD_DAILY, 'Daily Rate'),
+        (PERIOD_HOURLY, 'Hourly Rate'),
+    ]
+
+    contractor_workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name='equipment_presets',
+        limit_choices_to={'workspace_type': Workspace.WORKSPACE_CONTRACTOR},
+    )
+    submitted_to_client = models.ForeignKey(
+        Client,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='equipment_presets_submitted',
+    )
+
+    name = models.CharField(max_length=100, help_text="e.g., Gyro, TLB, Orientation Tool")
+    rate = models.DecimalField(max_digits=10, decimal_places=2, help_text="Rate in currency")
+    period = models.CharField(max_length=16, choices=PERIOD_CHOICES, default=PERIOD_DAILY)
+    
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    client_status = models.CharField(max_length=16, choices=CLIENT_STATUS_CHOICES, null=True, blank=True)
+    
+    submitted_to_client_at = models.DateTimeField(null=True, blank=True)
+    client_approved_at = models.DateTimeField(null=True, blank=True)
+    client_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='approved_equipment_presets'
+    )
+    client_comments = models.TextField(blank=True)
+    
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_equipment_presets')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        unique_together = [('contractor_workspace', 'name', 'submitted_to_client')]
+
+    def __str__(self):
+        return f"{self.name} - {self.get_period_display()} ${self.rate}"
+
+
+class ConsumablePreset(models.Model):
+    """
+    Preset rates for consumables (Casing, Drilling Fluids, etc.).
+    Contractors create presets and submit them to clients for approval.
+    """
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SUBMITTED, 'Submitted to Client'),
+    ]
+
+    CLIENT_PENDING = 'pending'
+    CLIENT_APPROVED = 'approved'
+    CLIENT_REJECTED = 'rejected'
+    CLIENT_STATUS_CHOICES = [
+        (CLIENT_PENDING, 'Pending Client Approval'),
+        (CLIENT_APPROVED, 'Approved by Client'),
+        (CLIENT_REJECTED, 'Rejected by Client'),
+    ]
+
+    contractor_workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name='consumable_presets',
+        limit_choices_to={'workspace_type': Workspace.WORKSPACE_CONTRACTOR},
+    )
+    submitted_to_client = models.ForeignKey(
+        Client,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='consumable_presets_submitted',
+    )
+
+    name = models.CharField(max_length=100, help_text="e.g., Casing 2-inch, Drilling Fluid")
+    rate = models.DecimalField(max_digits=10, decimal_places=2, help_text="Rate in currency")
+    unit = models.CharField(max_length=50, help_text="e.g., per unit, per meter, per liter")
+    
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    client_status = models.CharField(max_length=16, choices=CLIENT_STATUS_CHOICES, null=True, blank=True)
+    
+    submitted_to_client_at = models.DateTimeField(null=True, blank=True)
+    client_approved_at = models.DateTimeField(null=True, blank=True)
+    client_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='approved_consumable_presets'
+    )
+    client_comments = models.TextField(blank=True)
+    
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_consumable_presets')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        unique_together = [('contractor_workspace', 'name', 'submitted_to_client')]
+
+    def __str__(self):
+        return f"{self.name} - ${self.rate}/{self.unit}"
+
+
+class AdditionalChargePreset(models.Model):
+    """
+    Preset rates for additional charges and deductions.
+    Contractors create charge presets (positive) and submit to clients for approval.
+    Clients create deduction presets (negative) for their own use.
+    """
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SUBMITTED, 'Submitted to Client'),
+    ]
+
+    CLIENT_PENDING = 'pending'
+    CLIENT_APPROVED = 'approved'
+    CLIENT_REJECTED = 'rejected'
+    CLIENT_STATUS_CHOICES = [
+        (CLIENT_PENDING, 'Pending Client Approval'),
+        (CLIENT_APPROVED, 'Approved by Client'),
+        (CLIENT_REJECTED, 'Rejected by Client'),
+    ]
+
+    CHARGE_TYPE_CHARGE = 'charge'
+    CHARGE_TYPE_DEDUCTION = 'deduction'
+    CHARGE_TYPE_CHOICES = [
+        (CHARGE_TYPE_CHARGE, 'Charge (Positive)'),
+        (CHARGE_TYPE_DEDUCTION, 'Deduction (Negative)'),
+    ]
+
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name='additional_charge_presets',
+    )
+    submitted_to_client = models.ForeignKey(
+        Client,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='additional_charge_presets_submitted',
+    )
+
+    name = models.CharField(max_length=100, help_text="e.g., Rig relocation fee, Delay penalty, Equipment damage")
+    rate = models.DecimalField(max_digits=10, decimal_places=2, help_text="Rate in currency (positive for charges, negative for deductions)")
+    unit = models.CharField(max_length=50, help_text="e.g., per unit, per trip, per day, per hour")
+    charge_type = models.CharField(max_length=20, choices=CHARGE_TYPE_CHOICES, default=CHARGE_TYPE_CHARGE)
+
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    client_status = models.CharField(max_length=16, choices=CLIENT_STATUS_CHOICES, null=True, blank=True)
+
+    submitted_to_client_at = models.DateTimeField(null=True, blank=True)
+    client_approved_at = models.DateTimeField(null=True, blank=True)
+    client_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='approved_additional_charge_presets'
+    )
+    client_comments = models.TextField(blank=True)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_additional_charge_presets')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['charge_type', 'name']
+        unique_together = [('workspace', 'name', 'submitted_to_client')]
+
+    def __str__(self):
+        sign = "+" if self.charge_type == self.CHARGE_TYPE_CHARGE else "-"
+        return f"{self.name} - {sign}${abs(self.rate)}/{self.unit}"
+
+    @property
+    def effective_rate(self):
+        """Return the rate with correct sign based on charge type."""
+        return self.rate if self.charge_type == self.CHARGE_TYPE_CHARGE else -abs(self.rate)

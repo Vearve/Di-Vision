@@ -1,0 +1,11 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Page Not Found - 404{% endblock %}
+
+{% block content %}
+<div class="text-center mt-5">
+    <h1 class="display-3">404</h1>
+    <p class="lead">Oops! The page you are looking for does not exist.</p>
+    <p>Please check the URL or return to <a href="{% url 'core:home_dashboard' %}">home</a>.</p>
+</div>
+{% endblock %}

@@ -2,14 +2,65 @@ from django.contrib import admin
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib import messages
+from django.db.models import Q
 from django.utils.text import slugify
 from django.utils.crypto import get_random_string
-from .models import Client, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, ApprovalHistory, Survey, Casing
+from .models import (
+    BOQReport, BOQLineItem, Client, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, 
+    ApprovalHistory, Survey, Casing, Workspace, WorkspaceMembership,
+    DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset
+)
 
 # Customize admin site
-admin.site.site_header = getattr(settings, 'ADMIN_SITE_HEADER', 'Leos Investments Ltd')
-admin.site.site_title = getattr(settings, 'ADMIN_SITE_TITLE', 'Leos Admin')
+admin.site.site_header = getattr(settings, 'ADMIN_SITE_HEADER', 'Di-VisioN')
+admin.site.site_title = getattr(settings, 'ADMIN_SITE_TITLE', 'Di-VisioN Admin')
 admin.site.index_title = getattr(settings, 'ADMIN_INDEX_TITLE', 'Daily Shift Report Administration')
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Workspace & Membership Administration
+# ──────────────────────────────────────────────────────────────────────────────
+
+class WorkspaceMembershipInline(admin.TabularInline):
+    model = WorkspaceMembership
+    extra = 1
+    fields = ('user', 'role', 'created_at')
+    readonly_fields = ('created_at',)
+
+
+@admin.register(Workspace)
+class WorkspaceAdmin(admin.ModelAdmin):
+    list_display = ('name', 'workspace_type', 'is_active', 'member_count', 'created_at')
+    list_filter = ('workspace_type', 'is_active')
+    search_fields = ('name', 'slug', 'description')
+    prepopulated_fields = {'slug': ('name',)}
+    inlines = [WorkspaceMembershipInline]
+    fieldsets = (
+        ('Workspace Information', {
+            'fields': ('name', 'slug', 'workspace_type', 'description', 'is_active')
+        }),
+        ('Branding', {
+            'fields': ('logo',),
+            'description': 'Optional company logo used in exports and UI.',
+        }),
+        ('Timestamps', {
+            'fields': ('created_at',),
+            'classes': ('collapse',),
+        }),
+    )
+    readonly_fields = ('created_at',)
+
+    def member_count(self, obj):
+        return obj.memberships.count()
+    member_count.short_description = 'Members'
+
+
+@admin.register(WorkspaceMembership)
+class WorkspaceMembershipAdmin(admin.ModelAdmin):
+    list_display = ('user', 'workspace', 'role', 'created_at')
+    list_filter = ('workspace', 'role', 'workspace__workspace_type')
+    search_fields = ('user__username', 'workspace__name')
+    ordering = ('workspace__name', 'user__username')
 
 
 @admin.register(Client)
@@ -27,19 +78,47 @@ class ClientAdmin(admin.ModelAdmin):
             'description': 'Link to user account for client login. Create a user first, then link here.'
         }),
     )
-    raw_id_fields = ('user',)
-    
     fieldsets = (
         ('Company Information', {
             'fields': ('name', 'contact_person', 'email', 'phone', 'address', 'is_active')
+        }),
+        ('Workspace', {
+            'fields': ('workspace',),
+            'description': 'Link to a Workspace of type "Client Company". Create the workspace first.',
         }),
         ('User Account', {
             'fields': ('user',),
             'description': 'Link to user account for client login. Create user first in Users section.'
         }),
     )
+    # Keep a real dropdown for user selection in admin (instead of raw ID input)
+    autocomplete_fields = ()
 
     actions = ['create_or_reset_client_login']
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if obj.user:
+            from accounts.models import UserProfile
+            profile, _ = UserProfile.objects.get_or_create(user=obj.user)
+            if profile.role != UserProfile.ROLE_CLIENT:
+                profile.role = UserProfile.ROLE_CLIENT
+                profile.save(update_fields=['role'])
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """Show all users in username order for client account linking."""
+        if db_field.name == 'user':
+            current_user_id = None
+            object_id = request.resolver_match.kwargs.get('object_id') if request.resolver_match else None
+            if object_id:
+                try:
+                    current_user_id = Client.objects.only('user_id').get(pk=object_id).user_id
+                except Client.DoesNotExist:
+                    current_user_id = None
+            kwargs['queryset'] = User.objects.filter(
+                Q(client_profile__isnull=True) | Q(pk=current_user_id)
+            ).order_by('username').distinct()
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     @admin.action(description="Create/Reset client login and show temporary password")
     def create_or_reset_client_login(self, request, queryset):
@@ -110,7 +189,7 @@ class DrillShiftAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at', 'submitted_to_client_at', 'client_approved_at')
     fieldsets = (
         ('Basic Information', {
-            'fields': ('date', 'shift_type', 'client', 'rig', 'location')
+            'fields': ('date', 'shift_type', 'client', 'contractor_workspace', 'rig', 'location')
         }),
         ('Staff', {
             'fields': ('created_by', 'supervisor_name', 'driller_name', 'helper1_name', 'helper2_name', 'helper3_name', 'helper4_name')
@@ -177,3 +256,119 @@ class CasingAdmin(admin.ModelAdmin):
 class ApprovalHistoryAdmin(admin.ModelAdmin):
     list_display = ('id', 'shift', 'approver', 'role', 'decision', 'timestamp')
     list_filter = ('decision',)
+
+
+class BOQLineItemInline(admin.TabularInline):
+    model = BOQLineItem
+    extra = 1
+    fields = ('item_type', 'item_name', 'quantity', 'unit', 'locked_rate', 'total_amount', 'notes')
+    readonly_fields = ('total_amount',)
+
+
+@admin.register(BOQReport)
+class BOQReportAdmin(admin.ModelAdmin):
+    list_display = ('title', 'client', 'period_start', 'period_end', 'status', 'client_status', 'created_by', 'submitted_to_client_at')
+    list_filter = ('status', 'client_status', 'client', 'period_start', 'period_end')
+    search_fields = ('title', 'client__name', 'created_by__username')
+    ordering = ('-period_end', '-created_at')
+    inlines = [BOQLineItemInline]
+
+
+@admin.register(BOQLineItem)
+class BOQLineItemAdmin(admin.ModelAdmin):
+    list_display = ('boq_report', 'item_type', 'item_name', 'quantity', 'unit', 'locked_rate', 'total_amount')
+    list_filter = ('item_type', 'boq_report__client')
+    search_fields = ('item_name', 'boq_report__title')
+    readonly_fields = ('total_amount',)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Preset Administration (Drill Sizes, Equipment, Consumables)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@admin.register(DrillSizePreset)
+class DrillSizePresetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'contractor_workspace', 'submitted_to_client', 'rate_per_meter', 'status', 'client_status', 'created_at')
+    list_filter = ('status', 'client_status', 'contractor_workspace', 'submitted_to_client')
+    search_fields = ('name', 'contractor_workspace__name', 'submitted_to_client__name')
+    readonly_fields = ('created_at', 'updated_at', 'submitted_to_client_at', 'client_approved_at')
+    fieldsets = (
+        ('Preset Information', {
+            'fields': ('name', 'rate_per_meter', 'contractor_workspace')
+        }),
+        ('Submission & Approval', {
+            'fields': ('status', 'submitted_to_client', 'submitted_to_client_at', 
+                      'client_status', 'client_approved_at', 'client_approved_by', 'client_comments')
+        }),
+        ('Audit', {
+            'fields': ('created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    ordering = ('-created_at',)
+
+
+@admin.register(EquipmentPreset)
+class EquipmentPresetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'contractor_workspace', 'submitted_to_client', 'period', 'rate', 'status', 'client_status', 'created_at')
+    list_filter = ('status', 'client_status', 'period', 'contractor_workspace', 'submitted_to_client')
+    search_fields = ('name', 'contractor_workspace__name', 'submitted_to_client__name')
+    readonly_fields = ('created_at', 'updated_at', 'submitted_to_client_at', 'client_approved_at')
+    fieldsets = (
+        ('Preset Information', {
+            'fields': ('name', 'rate', 'period', 'contractor_workspace')
+        }),
+        ('Submission & Approval', {
+            'fields': ('status', 'submitted_to_client', 'submitted_to_client_at',
+                      'client_status', 'client_approved_at', 'client_approved_by', 'client_comments')
+        }),
+        ('Audit', {
+            'fields': ('created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    ordering = ('-created_at',)
+
+
+@admin.register(ConsumablePreset)
+class ConsumablePresetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'contractor_workspace', 'submitted_to_client', 'unit', 'rate', 'status', 'client_status', 'created_at')
+    list_filter = ('status', 'client_status', 'contractor_workspace', 'submitted_to_client')
+    search_fields = ('name', 'contractor_workspace__name', 'submitted_to_client__name')
+    readonly_fields = ('created_at', 'updated_at', 'submitted_to_client_at', 'client_approved_at')
+    fieldsets = (
+        ('Preset Information', {
+            'fields': ('name', 'rate', 'unit', 'contractor_workspace')
+        }),
+        ('Submission & Approval', {
+            'fields': ('status', 'submitted_to_client', 'submitted_to_client_at',
+                      'client_status', 'client_approved_at', 'client_approved_by', 'client_comments')
+        }),
+        ('Audit', {
+            'fields': ('created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    ordering = ('-created_at',)
+
+
+@admin.register(AdditionalChargePreset)
+class AdditionalChargePresetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'workspace', 'charge_type', 'submitted_to_client', 'unit', 'rate', 'status', 'client_status', 'created_at')
+    list_filter = ('status', 'client_status', 'workspace', 'submitted_to_client', 'charge_type')
+    search_fields = ('name', 'workspace__name', 'submitted_to_client__name')
+    readonly_fields = ('created_at', 'updated_at', 'submitted_to_client_at', 'client_approved_at')
+    fieldsets = (
+        ('Preset Information', {
+            'fields': ('name', 'rate', 'unit', 'charge_type', 'workspace')
+        }),
+        ('Submission & Approval', {
+            'fields': ('status', 'submitted_to_client', 'submitted_to_client_at',
+                      'client_status', 'client_approved_at', 'client_approved_by', 'client_comments')
+        }),
+        ('Audit', {
+            'fields': ('created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    ordering = ('-created_at',)

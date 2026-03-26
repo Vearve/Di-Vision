@@ -1,0 +1,73 @@
+{# Reusable full detailed shift information block for collapsible sections. #}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <h6 class="card-title border-bottom pb-2 mb-3">SHIFT INFORMATION</h6>
+        <dl class="row mb-2">
+            <dt class="col-5 text-muted small">Drill</dt><dd class="col-7 small mb-2">{{ shift.rig }}</dd>
+            <dt class="col-5 text-muted small">Location</dt><dd class="col-7 small mb-2">{{ shift.location|default:"--" }}</dd>
+            <dt class="col-5 text-muted small">Client</dt><dd class="col-7 small mb-2">{{ shift.client.name|default:"--" }}</dd>
+            <dt class="col-5 text-muted small">Supervisor</dt><dd class="col-7 small mb-2">{{ shift.supervisor_name|default:"--" }}</dd>
+            <dt class="col-5 text-muted small">Driller</dt><dd class="col-7 small mb-2">{{ shift.driller_name|default:"--" }}</dd>
+            {% if shift.helper1_name or shift.helper2_name or shift.helper3_name or shift.helper4_name %}
+            <dt class="col-5 text-muted small">Helpers</dt>
+            <dd class="col-7 small mb-2">
+                {% if shift.helper1_name %}{{ shift.helper1_name }}{% endif %}
+                {% if shift.helper2_name %}{% if shift.helper1_name %}, {% endif %}{{ shift.helper2_name }}{% endif %}
+                {% if shift.helper3_name %}{% if shift.helper1_name or shift.helper2_name %}, {% endif %}{{ shift.helper3_name }}{% endif %}
+                {% if shift.helper4_name %}{% if shift.helper1_name or shift.helper2_name or shift.helper3_name %}, {% endif %}{{ shift.helper4_name }}{% endif %}
+            </dd>
+            {% endif %}
+        </dl>
+    </div>
+</div>
+{% if shift.standby_client or shift.standby_constructor %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <h6 class="card-title border-bottom pb-2 mb-3"><i class="bi bi-exclamation-triangle text-warning"></i> STANDBY INFORMATION</h6>
+        {% if shift.standby_client %}
+        <div class="alert alert-warning mb-3">
+            <h6 class="alert-heading"><i class="bi bi-person-badge"></i> Client Standby</h6>
+            <p class="mb-1"><strong>Reason:</strong> {{ shift.get_standby_client_reason_display }}</p>
+            {% if shift.standby_client_remarks %}<p class="mb-0"><strong>Remarks:</strong> {{ shift.standby_client_remarks }}</p>{% endif %}
+        </div>
+        {% endif %}
+        {% if shift.standby_constructor %}
+        <div class="alert alert-info mb-0">
+            <h6 class="alert-heading"><i class="bi bi-tools"></i> Constructor Standby</h6>
+            <p class="mb-1"><strong>Reason:</strong> {{ shift.get_standby_constructor_reason_display }}</p>
+            {% if shift.standby_constructor_remarks %}<p class="mb-0"><strong>Remarks:</strong> {{ shift.standby_constructor_remarks }}</p>{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-chat-left-text"></i> COMMENTS & NOTES</h6>
+        {% if shift.notes %}<p class="text-muted">{{ shift.notes }}</p>{% else %}<p class="text-muted">No comments entered for this shift</p>{% endif %}
+    </div>
+</div>
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-chat-left-text"></i> Comments & Attachments</h6>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="d-flex"><i class="bi bi-pencil me-2"></i><div><strong class="d-block">DAY</strong><small class="text-muted">{% if shift.notes and shift.shift_type == 'day' %}{{ shift.notes }}{% else %}no comments or attachments entered for this shift{% endif %}</small></div></div>
+            </div>
+            <div class="col-md-6 mb-3">
+                <div class="d-flex"><i class="bi bi-pencil me-2"></i><div><strong class="d-block">NIGHT</strong><small class="text-muted">{% if shift.notes and shift.shift_type == 'night' %}{{ shift.notes }}{% else %}no comments or attachments entered for this shift{% endif %}</small></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% if shift.surveys.all %}
+<div class="card border-0 shadow-sm mb-3"><div class="card-body"><h6 class="card-title mb-3">SURVEYS</h6><div class="table-responsive"><table class="table table-sm table-hover"><thead class="table-light"><tr><th>Survey Type</th><th>Depth</th><th>Dip Angle</th><th>Azimuth</th><th>Surveyor</th><th>Findings</th><th>Time</th></tr></thead><tbody>{% for survey in shift.surveys.all %}<tr><td><span class="badge bg-info">{{ survey.get_survey_type_display }}</span></td><td>{{ survey.depth }}m</td><td>{{ survey.dip_angle }}°</td><td>{{ survey.azimuth }}°</td><td>{{ survey.surveyor_name|default:"--" }}</td><td>{{ survey.findings|truncatewords:10 }}</td><td>{{ survey.survey_time|date:"H:i" }}</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}
+{% if shift.casings.all %}
+<div class="card border-0 shadow-sm mb-3"><div class="card-body"><h6 class="card-title mb-3">CASING</h6><div class="table-responsive"><table class="table table-sm table-hover"><thead class="table-light"><tr><th>Size</th><th>Type</th><th>Start Depth</th><th>End Depth</th><th>Length</th><th>Remarks</th><th>Installed</th></tr></thead><tbody>{% for casing in shift.casings.all %}<tr><td><span class="badge bg-secondary">{{ casing.casing_size }}</span></td><td>{{ casing.get_casing_type_display }}</td><td>{{ casing.start_depth }}m</td><td>{{ casing.end_depth }}m</td><td><strong>{{ casing.length }}m</strong></td><td>{{ casing.remarks|truncatewords:10|default:"--" }}</td><td>{{ casing.installed_at|date:"H:i" }}</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}
+<div class="card border-0 shadow-sm mb-3"><div class="card-body"><h6 class="card-title mb-3">ACTIVITIES BREAKDOWN</h6><div class="row text-center mb-3"><div class="col"><small class="text-muted d-block">Drilling</small><strong id="drillingHours">--</strong></div><div class="col"><small class="text-muted d-block">Maintenance</small><strong id="maintenanceHours">--</strong></div><div class="col"><small class="text-muted d-block">Safety</small><strong id="safetyHours">--</strong></div><div class="col"><small class="text-muted d-block">Standby</small><strong id="standbyHours">--</strong></div><div class="col"><small class="text-muted d-block">Other</small><strong id="otherHours">--</strong></div></div><div class="activity-chart mb-3" style="height:60px;min-width:280px;background:#fafafa;border-radius:6px;"><canvas id="activityChart"></canvas></div>{% if shift.activities.all %}<h6 class="text-muted small mt-4 mb-2">ACTIVITY DETAILS</h6><div class="table-responsive"><table class="table table-sm table-hover"><thead class="table-light"><tr><th>Time</th><th>Type</th><th>Duration</th><th>Description</th></tr></thead><tbody>{% for activity in shift.activities.all %}<tr><td>{{ activity.start_time|date:"H:i" }}</td><td><span class="badge {% if activity.activity_type == 'drilling' %}bg-success{% elif activity.activity_type == 'maintenance' %}bg-warning{% elif activity.activity_type == 'safety' %}bg-info{% elif activity.activity_type == 'meeting' %}bg-primary{% else %}bg-secondary{% endif %}">{{ activity.get_activity_type_display }}</span></td><td><strong>{{ activity.duration_minutes|default:"--" }} min</strong></td><td>{{ activity.description|truncatewords:15|default:"--" }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="alert alert-light mt-3 mb-0"><small class="text-muted"><i class="bi bi-info-circle"></i> No detailed activities logged for this shift.</small></div>{% endif %}</div></div>
+<div class="card border-0 shadow-sm mb-3"><div class="card-body"><h6 class="card-title mb-3">DRILLING PROGRESS</h6><div class="table-responsive"><table class="table table-sm table-hover"><thead class="table-light"><tr><th>Shift</th><th>Hole</th><th>Size</th><th>Depth (From)</th><th>Depth (To)</th><th>Meters Drilled</th><th>Rate of Penetration</th><th>Core Recovery %</th><th>Core Tray Image</th></tr></thead><tbody>{% for progress in shift.progress.all %}<tr><td>{{ shift.get_shift_type_display|title }}</td><td>{{ progress.hole_number|default:"--" }}</td><td>{{ progress.get_size_display|default:"HQ" }}</td><td>{{ progress.start_depth }}m</td><td>{{ progress.end_depth }}m</td><td><strong>{{ progress.meters_drilled|floatformat:2 }}m</strong></td><td>{{ progress.penetration_rate|floatformat:2|default:"--" }} m/hr</td><td>{{ progress.recovery_percentage|floatformat:1|default:"--" }}%</td><td>{% if progress.core_tray_image %}<a href="{{ progress.core_tray_image.url }}" class="core-image-link" data-lightbox="core-trays" data-title="Hole {{ progress.hole_number|default:'--' }} - {{ progress.start_depth }}m to {{ progress.end_depth }}m"><img src="{{ progress.core_tray_image.url }}" alt="Core Tray" style="width:60px;height:60px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid #ddd;"></a>{% else %}<span class="text-muted small">No image</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="9" class="text-center text-muted">No drilling progress recorded</td></tr>{% endfor %}</tbody><tfoot class="table-light"><tr><td colspan="5" class="text-end"><strong>Total:</strong></td><td><strong>{{ total_meters }}m</strong></td><td colspan="3"></td></tr></tfoot></table></div></div></div>
+{% if shift.materials.all %}
+<div class="card border-0 shadow-sm mb-3"><div class="card-body"><h6 class="card-title mb-3">MATERIALS USED</h6><div class="table-responsive"><table class="table table-sm"><thead class="table-light"><tr><th>Material</th><th>Quantity</th><th>Unit</th><th>Remarks</th></tr></thead><tbody>{% for material in shift.materials.all %}<tr><td>{{ material.material_name }}</td><td>{{ material.quantity }}</td><td>{{ material.unit }}</td><td>{{ material.remarks }}</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}

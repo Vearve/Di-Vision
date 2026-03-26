@@ -77,11 +77,21 @@ def export_shifts_to_csv(shifts: List[DrillShift], response: HttpResponse) -> Ht
     
     return response
 
-def export_monthly_boq(shifts: List[DrillShift], response: HttpResponse) -> HttpResponse:
-    """Export monthly BOQ report to Excel."""
+def export_monthly_boq(shifts: List[DrillShift], response: HttpResponse, company_name: str = 'DI-VISION', period_label: str = '', boq_report=None) -> HttpResponse:
+    """Export monthly BOQ report to Excel, branded with the company name, optionally including BOQ line items."""
     workbook = xlsxwriter.Workbook(response)
     
-    # Styles
+    # ── Styles ────────────────────────────────────────────────────────────────
+    title_style = workbook.add_format({
+        'bold': True,
+        'font_size': 14,
+        'font_color': '#1F3864',
+    })
+    subtitle_style = workbook.add_format({
+        'italic': True,
+        'font_size': 10,
+        'font_color': '#595959',
+    })
     header_style = workbook.add_format({
         'bold': True,
         'align': 'center',
@@ -89,6 +99,26 @@ def export_monthly_boq(shifts: List[DrillShift], response: HttpResponse) -> Http
         'bg_color': '#4F81BD',
         'font_color': 'white',
         'border': 1
+    })
+    
+    subheader_style = workbook.add_format({
+        'bold': True,
+        'align': 'left',
+        'bg_color': '#D9E1F2',
+        'font_color': '#1F3864',
+        'border': 1
+    })
+    
+    currency_style = workbook.add_format({
+        'num_format': '$#,##0.00',
+        'border': 1
+    })
+    
+    total_style = workbook.add_format({
+        'bold': True,
+        'num_format': '$#,##0.00',
+        'border': 1,
+        'bg_color': '#FFF2CC'
     })
     
     date_style = workbook.add_format({
@@ -105,47 +135,57 @@ def export_monthly_boq(shifts: List[DrillShift], response: HttpResponse) -> Http
         'border': 1
     })
     
-    # Summary Sheet
+    # ── Summary Sheet ─────────────────────────────────────────────────────────
     ws_summary = workbook.add_worksheet('Summary')
-    ws_summary.set_column('A:A', 12)  # Date
-    ws_summary.set_column('B:B', 15)  # Location
-    ws_summary.set_column('C:C', 10)  # Rig
-    ws_summary.set_column('D:D', 15)  # Total Meters
-    ws_summary.set_column('E:E', 20)  # Avg. Penetration
-    
-    # Write headers
+    ws_summary.set_column('A:A', 12)
+    ws_summary.set_column('B:B', 15)
+    ws_summary.set_column('C:C', 10)
+    ws_summary.set_column('D:D', 15)
+    ws_summary.set_column('E:E', 20)
+
+    # Company name header block (rows 0-2)
+    ws_summary.write(0, 0, company_name, title_style)
+    if period_label:
+        ws_summary.write(1, 0, f'BOQ Report — {period_label}', subtitle_style)
+    ws_summary.write(2, 0, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}', subtitle_style)
+
+    # Data starts at row 4 (0-indexed)
+    DATA_ROW_START = 4
+
     headers = ['Date', 'Location', 'Rig', 'Total Meters', 'Avg. Penetration']
     for col, header in enumerate(headers):
-        ws_summary.write(0, col, header, header_style)
+        ws_summary.write(DATA_ROW_START, col, header, header_style)
     
-    # Write summary data
-    row = 1
+    row = DATA_ROW_START + 1
     for shift in shifts:
         summary = generate_shift_summary(shift)
-        ws_summary.write_datetime(row, 0, shift.date, date_style)
+        ws_summary.write_datetime(row, 0, datetime.combine(shift.date, datetime.min.time()), date_style)
         ws_summary.write(row, 1, shift.location, border_style)
         ws_summary.write(row, 2, shift.rig, border_style)
         ws_summary.write_number(row, 3, float(summary['total_meters']), number_style)
         ws_summary.write_number(row, 4, float(summary['avg_penetration']), number_style)
         row += 1
     
-    # Add totals
-    ws_summary.write(row, 0, 'Total', header_style)
-    ws_summary.write_formula(row, 3, f'=SUM(D2:D{row})', number_style)
-    ws_summary.write_formula(row, 4, f'=AVERAGE(E2:E{row})', number_style)
+    if row > DATA_ROW_START + 1:
+        ws_summary.write(row, 0, 'Total', header_style)
+        ws_summary.write_formula(row, 3, f'=SUM(D{DATA_ROW_START + 2}:D{row})', number_style)
+        ws_summary.write_formula(row, 4, f'=AVERAGE(E{DATA_ROW_START + 2}:E{row})', number_style)
     
-    # Materials Sheet
+    # ── Materials Sheet ───────────────────────────────────────────────────────
     ws_materials = workbook.add_worksheet('Materials')
-    ws_materials.set_column('A:A', 25)  # Material Name
-    ws_materials.set_column('B:B', 15)  # Total Quantity
-    ws_materials.set_column('C:C', 10)  # Unit
-    
-    # Write headers
+    ws_materials.set_column('A:A', 25)
+    ws_materials.set_column('B:B', 15)
+    ws_materials.set_column('C:C', 10)
+
+    ws_materials.write(0, 0, company_name, title_style)
+    if period_label:
+        ws_materials.write(1, 0, f'Materials — {period_label}', subtitle_style)
+
+    MAT_ROW_START = 3
     material_headers = ['Material', 'Total Quantity', 'Unit']
     for col, header in enumerate(material_headers):
-        ws_materials.write(0, col, header, header_style)
+        ws_materials.write(MAT_ROW_START, col, header, header_style)
     
-    # Aggregate materials data
     materials_summary = MaterialUsed.objects.filter(
         shift__in=shifts
     ).values(
@@ -154,13 +194,107 @@ def export_monthly_boq(shifts: List[DrillShift], response: HttpResponse) -> Http
         total_quantity=Sum('quantity')
     ).order_by('material_name')
     
-    # Write materials data
-    row = 1
+    row = MAT_ROW_START + 1
     for material in materials_summary:
         ws_materials.write(row, 0, material['material_name'], border_style)
         ws_materials.write_number(row, 1, float(material['total_quantity']), number_style)
         ws_materials.write(row, 2, material['unit'], border_style)
         row += 1
+    
+    # ── BOQ Line Items Sheet ──────────────────────────────────────────────────
+    if boq_report:
+        ws_boq = workbook.add_worksheet('BOQ Line Items')
+        ws_boq.set_column('A:A', 30)
+        ws_boq.set_column('B:B', 12)
+        ws_boq.set_column('C:C', 12)
+        ws_boq.set_column('D:D', 12)
+        ws_boq.set_column('E:E', 14)
+
+        ws_boq.write(0, 0, company_name, title_style)
+        if period_label:
+            ws_boq.write(1, 0, f'Bill of Quantities — {period_label}', subtitle_style)
+        ws_boq.write(2, 0, f'Client: {boq_report.client.name}', subtitle_style)
+
+        BOQ_ROW_START = 4
+
+        line_items_by_type = boq_report.get_line_items_by_type()
+        type_totals = boq_report.get_total_by_type()
+        grand_total = boq_report.get_grand_total()
+        additional_total = boq_report.get_additional_charges_total()
+
+        current_row = BOQ_ROW_START
+
+        def write_section(section_name, items):
+            nonlocal current_row
+            ws_boq.write(current_row, 0, section_name, subheader_style)
+            for col in range(1, 5):
+                ws_boq.write(current_row, col, '', subheader_style)
+            current_row += 1
+
+            headers = ['Description', 'Qty', 'Unit', 'Rate (USD)', 'Amount (USD)']
+            for col, header in enumerate(headers):
+                ws_boq.write(current_row, col, header, header_style)
+            current_row += 1
+
+            for item in items:
+                ws_boq.write(current_row, 0, item.item_name, border_style)
+                ws_boq.write_number(current_row, 1, float(item.quantity), number_style)
+                ws_boq.write(current_row, 2, item.unit, border_style)
+                ws_boq.write_number(current_row, 3, float(item.locked_rate), currency_style)
+                ws_boq.write_number(current_row, 4, float(item.total_amount), currency_style)
+                current_row += 1
+
+            ws_boq.write(current_row, 3, 'Subtotal', header_style)
+            ws_boq.write_number(current_row, 4, float(type_totals.get(section_name.lower().replace(' ', '_'), 0)), total_style)
+            current_row += 2
+
+        # 1 - Production Drilling
+        if line_items_by_type.get('drill_size'):
+            write_section('Production Drilling', line_items_by_type['drill_size'])
+
+        # 2 - Equipment Rental
+        if line_items_by_type.get('equipment'):
+            write_section('Equipment Rental', line_items_by_type['equipment'])
+
+        # 3 - Consumables
+        if line_items_by_type.get('consumable'):
+            write_section('Consumables', line_items_by_type['consumable'])
+
+        # 4 - Additional Charges / Deductions
+        ws_boq.write(current_row, 0, 'Deductions / Additional Charges', subheader_style)
+        for col in range(1, 5):
+            ws_boq.write(current_row, col, '', subheader_style)
+        current_row += 1
+
+        headers = ['Description', 'Amount (USD)', '', '', '']
+        for col, header in enumerate(headers):
+            ws_boq.write(current_row, col, header, header_style)
+        current_row += 1
+
+        if boq_report.additional_charges.exists():
+            for charge in boq_report.additional_charges.filter(contractor_approved=True, client_approved=True, is_rejected=False):
+                ws_boq.write(current_row, 0, charge.description, border_style)
+                ws_boq.write_number(current_row, 1, float(charge.amount), currency_style)
+                current_row += 1
+        else:
+            ws_boq.write(current_row, 0, 'None', border_style)
+            current_row += 1
+
+        ws_boq.write(current_row, 0, 'Total Additional', header_style)
+        ws_boq.write_number(current_row, 1, float(additional_total), total_style)
+        current_row += 2
+
+        # Final totals
+        ws_boq.write(current_row, 3, 'Subtotal', header_style)
+        ws_boq.write_number(current_row, 4, float(grand_total - additional_total), total_style)
+        current_row += 1
+
+        ws_boq.write(current_row, 3, 'Adjustments', header_style)
+        ws_boq.write_number(current_row, 4, float(additional_total), total_style)
+        current_row += 1
+
+        ws_boq.write(current_row, 3, 'Grand Total', header_style)
+        ws_boq.write_number(current_row, 4, float(grand_total), total_style)
     
     workbook.close()
     return response

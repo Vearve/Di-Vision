@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import date
 from decimal import Decimal
-from core.models import DrillShift, DrillingProgress, ActivityLog, MaterialUsed, ApprovalHistory
+from core.models import BOQReport, BOQAdditionalCharge, Client, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, ApprovalHistory
 from accounts.models import UserProfile
 
 User = get_user_model()
@@ -156,3 +156,88 @@ class ShiftCreateViewTest(TestCase):
         self.assertEqual(shift.progress.count(), 1)
         self.assertEqual(shift.activities.count(), 1)
         self.assertEqual(shift.materials.count(), 1)
+
+
+class BOQAdditionalChargeTest(TestCase):
+    def setUp(self):
+        self.supervisor = User.objects.create_user(username='supervisor_bo', password='test123')
+        self.supervisor.profile.role = UserProfile.ROLE_SUPERVISOR
+        self.supervisor.profile.save()
+
+        self.client_user = User.objects.create_user(username='client_bo', password='test123')
+        self.client_user.profile.role = UserProfile.ROLE_CLIENT
+        self.client_user.profile.save()
+
+        self.client_company = Client.objects.create(name='Test Client', user=self.client_user)
+        self.boq_report = BOQReport.objects.create(
+            title='BOQ ACR Test',
+            client=self.client_company,
+            period_start=date.today(),
+            period_end=date.today(),
+            status=BOQReport.STATUS_DRAFT,
+            client_status=BOQReport.CLIENT_PENDING,
+            created_by=self.supervisor,
+        )
+
+    def test_contractor_proposes_and_client_approves_additional_charge(self):
+        self.client.login(username='supervisor_bo', password='test123')
+        resp = self.client.post(reverse('core:boq_add_additional_charge', args=[self.boq_report.pk]), {
+            'description': 'Rig relocation fee',
+            'amount': '500.00',
+        })
+        self.assertEqual(resp.status_code, 302)
+
+        charge = BOQAdditionalCharge.objects.get(boq_report=self.boq_report)
+        self.assertTrue(charge.contractor_approved)
+        self.assertFalse(charge.client_approved)
+        self.assertEqual(charge.status, BOQAdditionalCharge.STATUS_PENDING)
+
+        self.client.logout()
+        self.client.login(username='client_bo', password='test123')
+        resp = self.client.post(reverse('core:boq_update_additional_charge', args=[self.boq_report.pk, charge.pk]), {
+            'action': 'approve',
+        })
+        self.assertEqual(resp.status_code, 302)
+
+        charge.refresh_from_db()
+        self.assertTrue(charge.contractor_approved)
+        self.assertTrue(charge.client_approved)
+        self.assertEqual(charge.status, BOQAdditionalCharge.STATUS_APPROVED)
+
+        total = self.boq_report.get_additional_charges_total()
+        self.assertEqual(total, Decimal('500.00'))
+        self.assertEqual(self.boq_report.get_grand_total(), Decimal('500.00'))
+
+
+class CustomErrorPagesTest(TestCase):
+    def test_404_page_renders_custom_template(self):
+        # Login first so route access is not redirected by login_required wrappers.
+        user = User.objects.create_user(username='test404', password='test123')
+        user.profile.role = UserProfile.ROLE_SUPERVISOR
+        user.profile.save()
+        self.client.login(username='test404', password='test123')
+
+        response = self.client.get('/this-url-should-not-exist-for-test-404/')
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, 'Page Not Found', status_code=404)
+
+    def test_shift_detail_missing_returns_404(self):
+        user = User.objects.create_user(username='test_shift404', password='test123')
+        user.profile.role = UserProfile.ROLE_SUPERVISOR
+        user.profile.save()
+        self.client.login(username='test_shift404', password='test123')
+
+        response = self.client.get(reverse('core:shift_detail', args=[999999]))
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, 'Page Not Found', status_code=404)
+
+    def test_core_main_routes_return_200_for_supervisor(self):
+        supervisor = User.objects.create_user(username='supervisor2', password='test123')
+        supervisor.profile.role = UserProfile.ROLE_SUPERVISOR
+        supervisor.profile.save()
+        self.client.login(username='supervisor2', password='test123')
+
+        # ensure core public routes are routed properly
+        for url_name in ['core:home_dashboard', 'core:shift_list']:
+            response = self.client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 200, msg=f"{url_name} should be accessible")

@@ -7,15 +7,16 @@ from django.urls import reverse
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, FileResponse, JsonResponse
 from django.utils import timezone
+from django.utils.text import slugify
 from decimal import Decimal
 import json
-from .models import DrillShift, DrillingProgress, ActivityLog, MaterialUsed, ApprovalHistory, Client, Alert
-from .forms import (DrillShiftForm, DrillingProgressFormSet, ActivityLogFormSet, 
+from .models import BOQReport, BOQAdditionalCharge, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, ApprovalHistory, Client, Alert, BOQLineItem
+from .forms import (BOQReportForm, BOQAdditionalChargeForm, DrillShiftForm, DrillingProgressFormSet, ActivityLogFormSet, 
                     MaterialUsedFormSet, SurveyFormSet, CasingFormSet)
 from .utils import export_shifts_to_csv, export_monthly_boq, calculate_daily_progress
 from accounts.decorators import role_required
 from accounts.decorators import (
-    supervisor_required, manager_required, supervisor_or_manager_required,
+    client_required, supervisor_required, manager_required, supervisor_or_manager_required,
     can_approve_shifts
 )
 
@@ -24,187 +25,220 @@ from accounts.decorators import (
 def home_dashboard(request):
     """
     Manager-focused home dashboard showing high-level KPIs and alerts.
-    
-    Displays:
-    - Total meters drilled today and this month
-    - Average ROP and core recovery (last 24 hours)
-    - Downtime summary by category
-    - Rig performance comparison (meters per rig, last 24h)
-    - Top 3 issues from recent shift comments
-    - Active system alerts
-    
-    Returns:
-        Rendered home dashboard template with KPIs and chart data
+    Supports period filters: This Week / This Month / Last Month / Year / Custom
+    and an optional Client filter.
     """
+    if not request.user.is_superuser and request.user.profile.is_client:
+        return redirect('core:client_dashboard')
+
     today = timezone.now().date()
     yesterday = today - timedelta(days=1)
-    month_start = today.replace(day=1)
     last_24h = timezone.now() - timedelta(hours=24)
-    
-    # KPI 1: Total meters drilled today
+
+    # ── Period filter ──────────────────────────────────────────────────────────
+    period = request.GET.get('period', 'this_month')
+    year_str = request.GET.get('year', str(today.year))
+    date_from_str = request.GET.get('date_from', '')
+    date_to_str = request.GET.get('date_to', '')
+    filter_client_id = request.GET.get('client_id', '')
+
+    if period == 'this_week':
+        filter_start = today - timedelta(days=today.weekday())
+        filter_end = today
+    elif period == 'last_month':
+        month_start_this = today.replace(day=1)
+        filter_end = month_start_this - timedelta(days=1)
+        filter_start = filter_end.replace(day=1)
+    elif period == 'year':
+        selected_year = int(year_str) if year_str.isdigit() else today.year
+        filter_start = today.replace(year=selected_year, month=1, day=1)
+        filter_end = today.replace(year=selected_year, month=12, day=31)
+    elif period == 'custom':
+        try:
+            filter_start = datetime.strptime(date_from_str, '%Y-%m-%d').date() if date_from_str else today.replace(day=1)
+            filter_end = datetime.strptime(date_to_str, '%Y-%m-%d').date() if date_to_str else today
+        except ValueError:
+            filter_start = today.replace(day=1)
+            filter_end = today
+    else:  # this_month (default)
+        period = 'this_month'
+        filter_start = today.replace(day=1)
+        filter_end = today
+
+    # ── Client filter ──────────────────────────────────────────────────────────
+    filter_client_obj = None
+    if filter_client_id and filter_client_id.isdigit():
+        try:
+            filter_client_obj = Client.objects.get(pk=int(filter_client_id))
+        except Client.DoesNotExist:
+            filter_client_id = ''
+
+    # Extra kwargs applied to progress queries: shift__client
+    prog_client_q = {'shift__client': filter_client_obj} if filter_client_obj else {}
+    # Extra kwargs applied to shift queries: client
+    shift_client_q = {'client': filter_client_obj} if filter_client_obj else {}
+
+    all_clients = Client.objects.filter(is_active=True).order_by('name')
+
+    # ── Operational KPIs (fixed: today / last 24 h) ────────────────────────────
     meters_today = DrillingProgress.objects.filter(
         shift__date=today,
-        shift__status=DrillShift.STATUS_APPROVED
+        shift__status=DrillShift.STATUS_APPROVED,
+        **prog_client_q,
     ).aggregate(total=Sum('meters_drilled'))['total'] or 0
-    
-    # KPI 2: Total meters this month
-    meters_month = DrillingProgress.objects.filter(
-        shift__date__gte=month_start,
-        shift__status=DrillShift.STATUS_APPROVED
-    ).aggregate(total=Sum('meters_drilled'))['total'] or 0
-    
-    # KPI 3: Average ROP (last 24 hours)
+
     avg_rop_24h = DrillingProgress.objects.filter(
         shift__date__gte=yesterday,
         shift__status=DrillShift.STATUS_APPROVED,
-        penetration_rate__isnull=False
+        penetration_rate__isnull=False,
+        **prog_client_q,
     ).aggregate(avg=Avg('penetration_rate'))['avg'] or 0
-    
-    # KPI 4: Average core recovery (last 24 hours)
+
     avg_recovery_24h = DrillingProgress.objects.filter(
         shift__date__gte=yesterday,
         shift__status=DrillShift.STATUS_APPROVED,
-        recovery_percentage__isnull=False
+        recovery_percentage__isnull=False,
+        **prog_client_q,
     ).aggregate(avg=Avg('recovery_percentage'))['avg'] or 0
-    
-    # KPI 5: Downtime summary by category (last 24h)
+
     downtime_data = ActivityLog.objects.filter(
         shift__date__gte=yesterday,
-        shift__status=DrillShift.STATUS_APPROVED
+        shift__status=DrillShift.STATUS_APPROVED,
     ).values('activity_type').annotate(
         total_hours=Sum('duration_minutes') / 60
     ).order_by('-total_hours')
-    
-    # KPI 6: Rig performance comparison (last 24h)
-    rig_performance = DrillingProgress.objects.filter(
+
+    rig_perf_with_recovery = DrillingProgress.objects.filter(
         shift__date__gte=yesterday,
         shift__status=DrillShift.STATUS_APPROVED,
-        shift__rig__isnull=False
-    ).exclude(
-        shift__rig=''
-    ).values('shift__rig').annotate(
-        total_meters=Sum('meters_drilled')
-    ).order_by('-total_meters')[:10]  # Top 10 rigs
-    
-    # KPI 7: Top 3 issues from latest shifts
-    recent_shifts_with_issues = DrillShift.objects.filter(
+        shift__rig__isnull=False,
+        **prog_client_q,
+    ).exclude(shift__rig='').values('shift__rig').annotate(
+        total_meters=Sum('meters_drilled'),
+        avg_recovery=Avg('recovery_percentage'),
+    ).order_by('-total_meters')[:10]
+
+    downtime_labels = [item['activity_type'] for item in downtime_data]
+    downtime_values = [float(item['total_hours']) for item in downtime_data]
+    rig_labels = [item['shift__rig'] for item in rig_perf_with_recovery]
+    rig_values = [float(item['total_meters']) for item in rig_perf_with_recovery]
+    rig_recovery = [float(item['avg_recovery']) if item['avg_recovery'] else 0 for item in rig_perf_with_recovery]
+
+    # ── Period-based KPIs ─────────────────────────────────────────────────────
+    meters_period = DrillingProgress.objects.filter(
+        shift__date__range=[filter_start, filter_end],
+        shift__status=DrillShift.STATUS_APPROVED,
+        **prog_client_q,
+    ).aggregate(total=Sum('meters_drilled'))['total'] or 0
+
+    client_performance = DrillingProgress.objects.filter(
+        shift__date__range=[filter_start, filter_end],
+        shift__status=DrillShift.STATUS_APPROVED,
+        shift__client__isnull=False,
+        **prog_client_q,
+    ).values('shift__client__name').annotate(
+        total_meters=Sum('meters_drilled'),
+        avg_recovery=Avg('recovery_percentage'),
+        avg_rop=Avg('penetration_rate'),
+        shift_count=Count('shift', distinct=True),
+    ).order_by('-total_meters')
+
+    location_performance = DrillingProgress.objects.filter(
+        shift__date__range=[filter_start, filter_end],
+        shift__status=DrillShift.STATUS_APPROVED,
+        shift__location__isnull=False,
+        **prog_client_q,
+    ).exclude(shift__location='').values('shift__location').annotate(
+        total_meters=Sum('meters_drilled'),
+        avg_recovery=Avg('recovery_percentage'),
+        shift_count=Count('shift', distinct=True),
+    ).order_by('-total_meters')[:10]
+
+    shifts_period_qs = DrillShift.objects.filter(
+        date__range=[filter_start, filter_end],
+        **shift_client_q,
+    )
+    draft_count = shifts_period_qs.filter(status=DrillShift.STATUS_DRAFT).count()
+    submitted_count = shifts_period_qs.filter(status=DrillShift.STATUS_SUBMITTED).count()
+    approved_count = shifts_period_qs.filter(status=DrillShift.STATUS_APPROVED).count()
+    rejected_count = shifts_period_qs.filter(status=DrillShift.STATUS_REJECTED).count()
+
+    active_clients_count = DrillShift.objects.filter(
+        date__range=[filter_start, filter_end],
         status=DrillShift.STATUS_APPROVED,
-        notes__isnull=False
-    ).exclude(
-        notes=''
-    ).order_by('-date', '-id')[:5]
-    
+        client__isnull=False,
+        **shift_client_q,
+    ).values('client').distinct().count()
+
+    client_pending_count = shifts_period_qs.filter(status=DrillShift.STATUS_APPROVED, client_status=DrillShift.CLIENT_PENDING).count()
+    client_approved_count = shifts_period_qs.filter(status=DrillShift.STATUS_APPROVED, client_status=DrillShift.CLIENT_APPROVED).count()
+    client_rejected_count = shifts_period_qs.filter(status=DrillShift.STATUS_APPROVED, client_status=DrillShift.CLIENT_REJECTED).count()
+
+    # Top 3 issues from latest shifts in period
+    recent_shifts_with_issues = DrillShift.objects.filter(
+        date__range=[filter_start, filter_end],
+        status=DrillShift.STATUS_APPROVED,
+        notes__isnull=False,
+        **shift_client_q,
+    ).exclude(notes='').order_by('-date', '-id')[:5]
+
     top_issues = []
     for shift in recent_shifts_with_issues:
         if shift.notes and len(shift.notes.strip()) > 10:
             top_issues.append({
                 'date': shift.date,
                 'rig': shift.rig,
-                'issue': shift.notes[:200],  # Truncate long notes
-                'shift_id': shift.id
+                'issue': shift.notes[:200],
+                'shift_id': shift.id,
             })
             if len(top_issues) >= 3:
                 break
-    
-    # Get active alerts (before slicing for counting)
+
+    # Active alerts
     active_alerts_qs = Alert.objects.filter(
         is_active=True,
-        is_acknowledged=False
+        is_acknowledged=False,
     ).select_related('shift').order_by('-severity', '-created_at')
-    
-    # Count alerts by severity (before slicing)
+
     alert_counts = {
         'critical': active_alerts_qs.filter(severity=Alert.SEVERITY_CRITICAL).count(),
         'high': active_alerts_qs.filter(severity=Alert.SEVERITY_HIGH).count(),
         'medium': active_alerts_qs.filter(severity=Alert.SEVERITY_MEDIUM).count(),
         'low': active_alerts_qs.filter(severity=Alert.SEVERITY_LOW).count(),
     }
-    
-    # Get top 10 for display
     active_alerts = active_alerts_qs[:10]
-    
-    # Prepare chart data for Chart.js
-    downtime_labels = [item['activity_type'] for item in downtime_data]
-    downtime_values = [float(item['total_hours']) for item in downtime_data]
-    
-    # Get rig performance data separately for recovery calculation
-    rig_perf_with_recovery = DrillingProgress.objects.filter(
-        shift__date__gte=yesterday,
-        shift__status=DrillShift.STATUS_APPROVED,
-        shift__rig__isnull=False
-    ).exclude(
-        shift__rig=''
-    ).values('shift__rig').annotate(
-        total_meters=Sum('meters_drilled'),
-        avg_recovery=Avg('recovery_percentage')
-    ).order_by('-total_meters')[:10]
-    
-    rig_labels = [item['shift__rig'] for item in rig_perf_with_recovery]
-    rig_values = [float(item['total_meters']) for item in rig_perf_with_recovery]
-    rig_recovery = [float(item['avg_recovery']) if item['avg_recovery'] else 0 for item in rig_perf_with_recovery]
-    
-    # Client/Project Performance (last 30 days)
-    client_performance = DrillingProgress.objects.filter(
-        shift__date__gte=month_start,
-        shift__status=DrillShift.STATUS_APPROVED,
-        shift__client__isnull=False
-    ).values('shift__client__name').annotate(
-        total_meters=Sum('meters_drilled'),
-        avg_recovery=Avg('recovery_percentage'),
-        avg_rop=Avg('penetration_rate'),
-        shift_count=Count('shift', distinct=True)
-    ).order_by('-total_meters')
-    
-    # Location/Project performance
-    location_performance = DrillingProgress.objects.filter(
-        shift__date__gte=month_start,
-        shift__status=DrillShift.STATUS_APPROVED,
-        shift__location__isnull=False
-    ).exclude(
-        shift__location=''
-    ).values('shift__location').annotate(
-        total_meters=Sum('meters_drilled'),
-        avg_recovery=Avg('recovery_percentage'),
-        shift_count=Count('shift', distinct=True)
-    ).order_by('-total_meters')[:10]
-    
-    # Workflow status metrics (this month)
-    shifts_month_qs = DrillShift.objects.filter(date__gte=month_start)
-    draft_count = shifts_month_qs.filter(status=DrillShift.STATUS_DRAFT).count()
-    submitted_count = shifts_month_qs.filter(status=DrillShift.STATUS_SUBMITTED).count()
-    approved_count = shifts_month_qs.filter(status=DrillShift.STATUS_APPROVED).count()
-    rejected_count = shifts_month_qs.filter(status=DrillShift.STATUS_REJECTED).count()
 
-    # Active clients (distinct clients with approved shifts this month)
-    active_clients_count = DrillShift.objects.filter(
-        date__gte=month_start,
-        status=DrillShift.STATUS_APPROVED,
-        client__isnull=False
-    ).values('client').distinct().count()
+    off_target_alerts = Alert.objects.filter(
+        is_active=True,
+        severity__in=[Alert.SEVERITY_HIGH, Alert.SEVERITY_CRITICAL],
+    ).select_related('shift').order_by('-created_at')[:8]
 
-    # Client workflow metrics (approved shifts only)
-    client_pending_count = shifts_month_qs.filter(status=DrillShift.STATUS_APPROVED, client_status=DrillShift.CLIENT_PENDING).count()
-    client_approved_count = shifts_month_qs.filter(status=DrillShift.STATUS_APPROVED, client_status=DrillShift.CLIENT_APPROVED).count()
-    client_rejected_count = shifts_month_qs.filter(status=DrillShift.STATUS_APPROVED, client_status=DrillShift.CLIENT_REJECTED).count()
-
-    # Off-target KPIs derived from recent alerts (high+critical active)
-    off_target_alerts = Alert.objects.filter(is_active=True, severity__in=[Alert.SEVERITY_HIGH, Alert.SEVERITY_CRITICAL]).select_related('shift').order_by('-created_at')[:8]
-
-    # Placeholder average days metrics (requires timestamps/more history) - derive from approval history if available
     from django.db.models import Min
-    approvals = ApprovalHistory.objects.filter(shift__in=shifts_month_qs, decision=ApprovalHistory.DECISION_APPROVED).values('shift_id').annotate(first_approved=Min('timestamp'))
-    # Map for quick lookup
+    approvals = ApprovalHistory.objects.filter(
+        shift__in=shifts_period_qs,
+        decision=ApprovalHistory.DECISION_APPROVED,
+    ).values('shift_id').annotate(first_approved=Min('timestamp'))
     approved_map = {a['shift_id']: a['first_approved'] for a in approvals}
     days_to_approve_values = []
-    for s in shifts_month_qs.filter(status=DrillShift.STATUS_APPROVED):
+    for s in shifts_period_qs.filter(status=DrillShift.STATUS_APPROVED):
         ts = approved_map.get(s.id)
         if ts:
             days_to_approve_values.append((ts.date() - s.date).days)
     avg_days_to_approve = round(sum(days_to_approve_values) / len(days_to_approve_values), 1) if days_to_approve_values else 0
 
+    # Build a human-readable period label for display
+    period_labels = {
+        'this_week': 'This Week',
+        'this_month': 'This Month',
+        'last_month': 'Last Month',
+        'year': year_str,
+        'custom': f"{filter_start} – {filter_end}",
+    }
+    period_label = period_labels.get(period, 'This Month')
+
     context = {
         'meters_today': float(meters_today),
-        'meters_month': float(meters_month),
+        'meters_month': float(meters_period),  # kept as meters_month for template compatibility
         'avg_rop_24h': round(float(avg_rop_24h), 2),
         'avg_recovery_24h': round(float(avg_recovery_24h), 2),
         'downtime_labels': json.dumps(downtime_labels),
@@ -229,6 +263,24 @@ def home_dashboard(request):
         'client_performance': client_performance,
         'location_performance': location_performance,
         'active_clients_count': active_clients_count,
+        # Filter state
+        'period': period,
+        'period_label': period_label,
+        'filter_start': filter_start,
+        'filter_end': filter_end,
+        'year_str': year_str,
+        'date_from_str': date_from_str,
+        'date_to_str': date_to_str,
+        'filter_client_id': filter_client_id,
+        'filter_client_obj': filter_client_obj,
+        'all_clients': all_clients,
+        'period_options': [
+            ('this_week', 'This Week'),
+            ('this_month', 'This Month'),
+            ('last_month', 'Last Month'),
+            ('year', 'Year'),
+            ('custom', 'Custom'),
+        ],
     }
     return render(request, 'core/home_dashboard.html', context)
 
@@ -249,6 +301,10 @@ def analytics_dashboard(request):
     Returns:
         Rendered analytics template with trend data for charts
     """
+    if not request.user.is_superuser and request.user.profile.is_client:
+        messages.info(request, 'Clients do not have access to the analytics dashboard.')
+        return redirect('core:client_dashboard')
+
     # Calculate date range (last 30 days)
     end_date = timezone.now().date()
     start_date = end_date - timedelta(days=30)
@@ -441,6 +497,10 @@ def shift_list(request):
         status: Filter shifts by status (draft/submitted/approved/rejected)
         hole_number: Filter by specific hole number
     """
+    if not request.user.is_superuser and request.user.profile.is_client:
+        messages.info(request, 'Clients view drilling activity from the client dashboard.')
+        return redirect('core:client_dashboard')
+
     # Base queryset with optimized related data loading
     shifts = DrillShift.objects.select_related(
         'created_by',
@@ -538,9 +598,11 @@ def shift_detail(request, pk):
     # Check permissions based on role
     profile = request.user.profile
     if not request.user.is_superuser:
-        if profile.is_client and shift.status != DrillShift.STATUS_APPROVED:
-            messages.error(request, 'You can only view approved shifts.')
-            return redirect('core:shift_list')
+        if profile.is_client:
+            client = getattr(request.user, 'client_profile', None)
+            if shift.status != DrillShift.STATUS_APPROVED or shift.client != client:
+                messages.error(request, 'You can only view approved shifts for your company.')
+                return redirect('core:client_dashboard')
         elif profile.is_supervisor and shift.created_by != request.user and shift.status == DrillShift.STATUS_DRAFT:
             messages.error(request, 'You cannot view draft shifts created by others.')
             return redirect('core:shift_list')
@@ -652,8 +714,8 @@ def shift_create(request):
         Rendered form template (GET) or redirect to shift detail (POST success)
     """
     if request.method == 'POST':
-        form = DrillShiftForm(request.POST)
-        progress_formset = DrillingProgressFormSet(request.POST, request.FILES, prefix='progress')
+        form = DrillShiftForm(request.POST, user=request.user)
+        progress_formset = DrillingProgressFormSet(request.POST, request.FILES, prefix='progress', form_kwargs={'user': request.user})
         activity_formset = ActivityLogFormSet(request.POST, prefix='activity')
         material_formset = MaterialUsedFormSet(request.POST, prefix='material')
         survey_formset = SurveyFormSet(request.POST, prefix='survey')
@@ -696,8 +758,8 @@ def shift_create(request):
             # Show validation errors
             messages.error(request, 'Please correct the errors below.')
     else:
-        form = DrillShiftForm()
-        progress_formset = DrillingProgressFormSet(prefix='progress')
+        form = DrillShiftForm(user=request.user)
+        progress_formset = DrillingProgressFormSet(prefix='progress', form_kwargs={'user': request.user})
         activity_formset = ActivityLogFormSet(prefix='activity')
         material_formset = MaterialUsedFormSet(prefix='material')
         survey_formset = SurveyFormSet(prefix='survey')
@@ -745,9 +807,9 @@ def shift_update(request, pk):
         return redirect('core:shift_detail', pk=shift.pk)
     
     if request.method == 'POST':
-        form = DrillShiftForm(request.POST, instance=shift)
+        form = DrillShiftForm(request.POST, instance=shift, user=request.user)
         progress_formset = DrillingProgressFormSet(
-            request.POST, request.FILES, instance=shift, prefix='progress'
+            request.POST, request.FILES, instance=shift, prefix='progress', form_kwargs={'user': request.user}
         )
         activity_formset = ActivityLogFormSet(
             request.POST, instance=shift, prefix='activity'
@@ -786,8 +848,8 @@ def shift_update(request, pk):
             # Show validation errors
             messages.error(request, 'Please correct the errors below.')
     else:
-        form = DrillShiftForm(instance=shift)
-        progress_formset = DrillingProgressFormSet(instance=shift, prefix='progress')
+        form = DrillShiftForm(instance=shift, user=request.user)
+        progress_formset = DrillingProgressFormSet(instance=shift, prefix='progress', form_kwargs={'user': request.user})
         activity_formset = ActivityLogFormSet(instance=shift, prefix='activity')
         material_formset = MaterialUsedFormSet(instance=shift, prefix='material')
         survey_formset = SurveyFormSet(instance=shift, prefix='survey')
@@ -1050,6 +1112,354 @@ def export_boq(request):
 
 
 @login_required
+def boq_report_list(request):
+    """List BOQ reports for contractors or clients, depending on the active role."""
+    reports = BOQReport.objects.select_related('client', 'created_by', 'client_reviewed_by')
+    is_client_view = not request.user.is_superuser and request.user.profile.is_client
+
+    if is_client_view:
+        client = getattr(request.user, 'client_profile', None)
+        if client is None:
+            messages.error(request, 'Your account is not linked to a client profile.')
+            return redirect('accounts:profile')
+        reports = reports.filter(client=client)
+        available_clients = [client]
+        selected_client_id = str(client.id)
+    else:
+        selected_client_id = request.GET.get('client', '')
+        if selected_client_id:
+            reports = reports.filter(client_id=selected_client_id)
+        available_clients = Client.objects.filter(is_active=True).order_by('name')
+
+    status = request.GET.get('status', '')
+    if status:
+        reports = reports.filter(status=status)
+
+    client_status = request.GET.get('client_status', '')
+    if client_status:
+        reports = reports.filter(client_status=client_status)
+
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+    if start_date:
+        reports = reports.filter(period_start__gte=start_date)
+    if end_date:
+        reports = reports.filter(period_end__lte=end_date)
+
+    reports = reports.order_by('-period_end', '-created_at')
+
+    context = {
+        'reports': reports,
+        'is_client_view': is_client_view,
+        'available_clients': available_clients,
+        'selected_client_id': selected_client_id,
+        'status_choices': BOQReport.STATUS_CHOICES,
+        'client_status_choices': BOQReport.CLIENT_STATUS_CHOICES,
+        'draft_count': reports.filter(status=BOQReport.STATUS_DRAFT).count(),
+        'submitted_count': reports.filter(status=BOQReport.STATUS_SUBMITTED).count(),
+        'client_pending_count': reports.filter(client_status=BOQReport.CLIENT_PENDING).count(),
+        'client_approved_count': reports.filter(client_status=BOQReport.CLIENT_APPROVED).count(),
+        'client_rejected_count': reports.filter(client_status=BOQReport.CLIENT_REJECTED).count(),
+    }
+    return render(request, 'core/boq_report_list.html', context)
+
+
+@login_required
+@role_required(['supervisor', 'manager'])
+def boq_report_create(request):
+    """Create a draft BOQ report for a client and drilling period."""
+    if request.method == 'POST':
+        # Get the client from POST data to filter presets
+        client_id = request.POST.get('client')
+        client = get_object_or_404(Client, pk=client_id) if client_id else None
+        
+        form = BOQReportForm(request.POST, client=client)
+        if form.is_valid():
+            report = form.save(commit=False)
+            report.created_by = request.user
+            report.status = BOQReport.STATUS_DRAFT
+            report.client_status = BOQReport.CLIENT_PENDING
+            report.save()
+            
+            # Create BOQLineItem instances from selected presets
+            selected_drill_sizes = form.cleaned_data.get('drill_size_presets', [])
+            selected_equipment = form.cleaned_data.get('equipment_presets', [])
+            selected_consumables = form.cleaned_data.get('consumable_presets', [])
+            
+            # Process selected drill size presets
+            for preset in selected_drill_sizes:
+                BOQLineItem.objects.create(
+                    boq_report=report,
+                    item_type='drill_size',
+                    item_name=preset.name,
+                    quantity=1,  # Default quantity
+                    unit='meter',
+                    locked_rate=preset.rate_per_meter,
+                    drill_size_preset=preset,
+                )
+            
+            # Process selected equipment presets
+            for preset in selected_equipment:
+                BOQLineItem.objects.create(
+                    boq_report=report,
+                    item_type='equipment',
+                    item_name=preset.name,
+                    quantity=1,  # Default quantity
+                    unit=preset.period,  # e.g., 'daily', 'hourly'
+                    locked_rate=preset.rate,
+                    equipment_preset=preset,
+                )
+            
+            # Process selected consumable presets
+            for preset in selected_consumables:
+                BOQLineItem.objects.create(
+                    boq_report=report,
+                    item_type='consumable',
+                    item_name=preset.name,
+                    quantity=1,  # Default quantity
+                    unit=preset.unit,
+                    locked_rate=preset.rate,
+                    consumable_preset=preset,
+                )
+            
+            # Process selected additional charge presets
+            selected_additional_charges = form.cleaned_data.get('additional_charge_presets', [])
+            for preset in selected_additional_charges:
+                BOQLineItem.objects.create(
+                    boq_report=report,
+                    item_type='additional_charge',
+                    item_name=preset.name,
+                    quantity=1,  # Default quantity
+                    unit=preset.unit,
+                    locked_rate=preset.effective_rate,
+                    additional_charge_preset=preset,
+                )
+            
+            messages.success(request, 'BOQ draft created successfully with line items.')
+            return redirect('core:boq_report_detail', pk=report.pk)
+    else:
+        initial = {}
+        client_id = None
+        if request.GET.get('client'):
+            initial['client'] = request.GET.get('client')
+            client_id = request.GET.get('client')
+        if request.GET.get('start_date'):
+            initial['period_start'] = request.GET.get('start_date')
+        if request.GET.get('end_date'):
+            initial['period_end'] = request.GET.get('end_date')
+        
+        # Get client for form initialization to filter presets
+        client = get_object_or_404(Client, pk=client_id) if client_id else None
+        form = BOQReportForm(initial=initial, client=client)
+
+    return render(request, 'core/boq_report_form.html', {'form': form})
+
+
+@login_required
+def boq_report_detail(request, pk):
+    """Show BOQ report contents and approval state."""
+    report = get_object_or_404(
+        BOQReport.objects.select_related('client', 'created_by', 'client_reviewed_by'),
+        pk=pk,
+    )
+
+    profile = request.user.profile
+    if not request.user.is_superuser and profile.is_client:
+        client = getattr(request.user, 'client_profile', None)
+        if report.client != client:
+            messages.error(request, 'You can only view BOQ reports for your company.')
+            return redirect('core:boq_report_list')
+
+    shifts = report.get_shifts_queryset().order_by('-date', '-id')
+    
+    # Get line items grouped by type
+    line_items = report.line_items.all().order_by('item_type', 'item_name')
+    line_items_by_type = {
+        'drill_size': [item for item in line_items if item.item_type == 'drill_size'],
+        'equipment': [item for item in line_items if item.item_type == 'equipment'],
+        'consumable': [item for item in line_items if item.item_type == 'consumable'],
+    }
+    
+    # Calculate totals by type
+    type_totals = {}
+    grand_total = report.get_grand_total()
+    for item_type, items in line_items_by_type.items():
+        total = sum(item.total_amount for item in items) if items else Decimal('0.00')
+        type_totals[item_type] = total
+
+    context = {
+        'report': report,
+        'shifts': shifts,
+        'materials_summary': report.get_materials_summary(),
+        'total_meters': report.get_total_meters(),
+        'total_shifts': shifts.count(),
+        'is_client_view': (not request.user.is_superuser and profile.is_client),
+        'can_submit_to_client': request.user.is_superuser or (not profile.is_client and report.status == BOQReport.STATUS_DRAFT),
+        'can_client_review': (not request.user.is_superuser and profile.is_client and report.status == BOQReport.STATUS_SUBMITTED and report.client_status == BOQReport.CLIENT_PENDING),
+        'line_items': line_items,
+        'line_items_by_type': line_items_by_type,
+        'type_totals': type_totals,
+        'additional_charges': report.additional_charges.all(),
+        'additional_charges_total': report.get_additional_charges_total(),
+        'grand_total': grand_total,
+    }
+    return render(request, 'core/boq.html', context)
+
+
+@login_required
+def boq_add_additional_charge(request, pk):
+    report = get_object_or_404(BOQReport, pk=pk)
+    profile = request.user.profile
+
+    if not request.user.is_superuser and profile.is_client:
+        client = getattr(request.user, 'client_profile', None)
+        if report.client != client:
+            messages.error(request, 'You can only add additional charges to your own BOQ reports.')
+            return redirect('core:boq_report_detail', pk=pk)
+
+    if request.method == 'POST':
+        form = BOQAdditionalChargeForm(request.POST)
+        if form.is_valid():
+            charge = form.save(commit=False)
+            charge.boq_report = report
+            charge.proposed_by = request.user
+
+            # Auto-approve by the proposing party
+            if profile.is_client:
+                charge.client_approved = True
+                charge.contractor_approved = False
+            else:
+                charge.contractor_approved = True
+                charge.client_approved = False
+
+            charge.save()
+            messages.success(request, 'Additional charge proposal submitted. Awaiting counterparty approval.')
+        else:
+            messages.error(request, 'Invalid additional charge data. Please fix the errors and retry.')
+
+    return redirect('core:boq_report_detail', pk=pk)
+
+
+@login_required
+def boq_update_additional_charge(request, pk, charge_pk):
+    report = get_object_or_404(BOQReport, pk=pk)
+    charge = get_object_or_404(BOQAdditionalCharge, pk=charge_pk, boq_report=report)
+    profile = request.user.profile
+
+    if not request.user.is_superuser and profile.is_client:
+        client = getattr(request.user, 'client_profile', None)
+        if report.client != client:
+            messages.error(request, 'You can only update additional charges for your own BOQ reports.')
+            return redirect('core:boq_report_detail', pk=pk)
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'approve':
+            if profile.is_client:
+                charge.client_approved = True
+            else:
+                charge.contractor_approved = True
+
+            if charge.client_approved and charge.contractor_approved:
+                charge.is_rejected = False
+
+            charge.save(update_fields=['client_approved', 'contractor_approved', 'is_rejected', 'updated_at'])
+            messages.success(request, 'Additional charge approval updated.')
+
+        elif action == 'reject':
+            charge.is_rejected = True
+            charge.contractor_approved = False
+            charge.client_approved = False
+            charge.save(update_fields=['is_rejected', 'client_approved', 'contractor_approved', 'updated_at'])
+            messages.warning(request, 'Additional charge rejected.')
+
+        else:
+            messages.error(request, 'Unknown action for additional charge.')
+
+    return redirect('core:boq_report_detail', pk=pk)
+
+
+@login_required
+def boq_report_export(request, pk):
+    """Export the exact BOQ package currently being reviewed."""
+    report = get_object_or_404(BOQReport.objects.select_related('client', 'contractor_workspace'), pk=pk)
+    profile = request.user.profile
+
+    if not request.user.is_superuser and profile.is_client:
+        client = getattr(request.user, 'client_profile', None)
+        if report.client != client:
+            messages.error(request, 'You can only export BOQ reports for your company.')
+            return redirect('core:boq_report_list')
+
+    shifts = list(report.get_shifts_queryset().order_by('date', 'id'))
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    filename = slugify(report.title) or f'boq-report-{report.pk}'
+    response['Content-Disposition'] = f'attachment; filename="{filename}.xlsx"'
+
+    # Determine company name for export header
+    company_name = 'DI-VISION'
+    if report.contractor_workspace:
+        company_name = report.contractor_workspace.name.upper()
+    period_label = f"{report.period_start} to {report.period_end} | Client: {report.client.name}"
+
+    return export_monthly_boq(shifts, response, company_name=company_name, period_label=period_label, boq_report=report)
+
+
+@login_required
+@role_required(['supervisor', 'manager'])
+def boq_submit_to_client(request, pk):
+    """Submit a contractor BOQ draft to the client for review."""
+    report = get_object_or_404(BOQReport, pk=pk)
+
+    if request.method == 'POST':
+        report.status = BOQReport.STATUS_SUBMITTED
+        report.client_status = BOQReport.CLIENT_PENDING
+        report.submitted_to_client_at = timezone.now()
+        report.save(update_fields=['status', 'client_status', 'submitted_to_client_at', 'updated_at'])
+        messages.success(request, f'BOQ report submitted to {report.client.name} for review.')
+
+    return redirect('core:boq_report_detail', pk=pk)
+
+
+@login_required
+@client_required
+def client_review_boq(request, pk):
+    """Client approves or rejects a submitted BOQ report."""
+    report = get_object_or_404(BOQReport.objects.select_related('client'), pk=pk)
+    client = getattr(request.user, 'client_profile', None)
+
+    if report.client != client:
+        messages.error(request, 'You can only review BOQ reports for your company.')
+        return redirect('core:boq_report_list')
+
+    if request.method == 'POST':
+        decision = request.POST.get('decision')
+        comments = request.POST.get('comments', '').strip()
+
+        if decision == 'approved':
+            report.client_status = BOQReport.CLIENT_APPROVED
+            report.client_comments = comments
+            report.client_reviewed_at = timezone.now()
+            report.client_reviewed_by = request.user
+            report.save(update_fields=['client_status', 'client_comments', 'client_reviewed_at', 'client_reviewed_by', 'updated_at'])
+            messages.success(request, 'BOQ approved successfully. The contractor can now proceed with invoicing.')
+        elif decision == 'rejected':
+            report.client_status = BOQReport.CLIENT_REJECTED
+            report.client_comments = comments
+            report.client_reviewed_at = timezone.now()
+            report.client_reviewed_by = request.user
+            report.save(update_fields=['client_status', 'client_comments', 'client_reviewed_at', 'client_reviewed_by', 'updated_at'])
+            messages.warning(request, 'BOQ rejected. The contractor can revise and resubmit it.')
+        else:
+            messages.error(request, 'Invalid decision.')
+
+    return redirect('core:boq_report_detail', pk=pk)
+
+
+@login_required
 @role_required(['manager'])
 def shift_submit_to_client(request, pk):
     """
@@ -1078,43 +1488,90 @@ def shift_submit_to_client(request, pk):
 
 
 @login_required
+@client_required
 def client_dashboard(request):
     """
     Client dashboard showing shifts submitted for their approval.
+    Supports period filters (This Week / This Month / Last Month / Year / Custom)
+    and a contractor workspace filter.
     """
-    # Check if user is linked to a client
+    from .models import Workspace
     try:
         client = request.user.client_profile
-    except:
+    except Exception:
         messages.error(request, 'Your account is not linked to a client profile.')
-        return redirect('core:shift_list')
-    
-    # Get shifts for this client
+        return redirect('accounts:profile')
+
+    today = timezone.now().date()
+
+    # ── Period filter ──────────────────────────────────────────────────────────
+    period = request.GET.get('period', 'this_month')
+    year_str = request.GET.get('year', str(today.year))
+    date_from_str = request.GET.get('date_from', '')
+    date_to_str = request.GET.get('date_to', '')
+
+    if period == 'this_week':
+        filter_start = today - timedelta(days=today.weekday())
+        filter_end = today
+    elif period == 'last_month':
+        month_start_this = today.replace(day=1)
+        filter_end = month_start_this - timedelta(days=1)
+        filter_start = filter_end.replace(day=1)
+    elif period == 'year':
+        selected_year = int(year_str) if year_str.isdigit() else today.year
+        filter_start = today.replace(year=selected_year, month=1, day=1)
+        filter_end = today.replace(year=selected_year, month=12, day=31)
+    elif period == 'custom':
+        try:
+            filter_start = datetime.strptime(date_from_str, '%Y-%m-%d').date() if date_from_str else today.replace(day=1)
+            filter_end = datetime.strptime(date_to_str, '%Y-%m-%d').date() if date_to_str else today
+        except ValueError:
+            filter_start = today.replace(day=1)
+            filter_end = today
+    else:
+        period = 'this_month'
+        filter_start = today.replace(day=1)
+        filter_end = today
+
+    # ── Contractor workspace filter ────────────────────────────────────────────
+    contractor_ws_id = request.GET.get('contractor_workspace_id', '')
+    contractor_workspaces = Workspace.objects.filter(
+        workspace_type=Workspace.WORKSPACE_CONTRACTOR,
+        is_active=True,
+    ).order_by('name')
+
+    # Base queryset: manager-approved shifts for this client within the period
     shifts = DrillShift.objects.filter(
         client=client,
-        status=DrillShift.STATUS_APPROVED  # Only show manager-approved shifts
-    ).select_related('created_by', 'client').prefetch_related('progress').order_by('-date')
-    
-    # Filter by client status
+        status=DrillShift.STATUS_APPROVED,
+        date__range=[filter_start, filter_end],
+    ).select_related('created_by', 'client', 'contractor_workspace').prefetch_related('progress').order_by('-date')
+
+    # Optionally filter by contractor workspace
+    if contractor_ws_id and contractor_ws_id.isdigit():
+        shifts = shifts.filter(contractor_workspace_id=int(contractor_ws_id))
+
+    # Status filter
     client_status = request.GET.get('client_status', '')
     if client_status:
         shifts = shifts.filter(client_status=client_status)
-    
-    # Filter by date range
-    start_date = request.GET.get('start_date', '')
-    end_date = request.GET.get('end_date', '')
-    if start_date:
-        shifts = shifts.filter(date__gte=start_date)
-    if end_date:
-        shifts = shifts.filter(date__lte=end_date)
-    
-    # Calculate summary counts (treat None as pending for clients)
+
+    # Summary counts (over ALL time for this client, not period-scoped)
     all_shifts = DrillShift.objects.filter(client=client, status=DrillShift.STATUS_APPROVED)
     pending_count = all_shifts.filter(Q(client_status=DrillShift.CLIENT_PENDING) | Q(client_status__isnull=True)).count()
     approved_count = all_shifts.filter(client_status=DrillShift.CLIENT_APPROVED).count()
     rejected_count = all_shifts.filter(client_status=DrillShift.CLIENT_REJECTED).count()
     total_shifts = all_shifts.count()
-    
+
+    period_labels = {
+        'this_week': 'This Week',
+        'this_month': 'This Month',
+        'last_month': 'Last Month',
+        'year': year_str,
+        'custom': f"{filter_start} – {filter_end}",
+    }
+    period_label = period_labels.get(period, 'This Month')
+
     context = {
         'shifts': shifts,
         'client': client,
@@ -1123,11 +1580,32 @@ def client_dashboard(request):
         'approved_count': approved_count,
         'rejected_count': rejected_count,
         'total_shifts': total_shifts,
+        'boq_pending_count': BOQReport.objects.filter(client=client, status=BOQReport.STATUS_SUBMITTED, client_status=BOQReport.CLIENT_PENDING).count(),
+        'boq_approved_count': BOQReport.objects.filter(client=client, client_status=BOQReport.CLIENT_APPROVED).count(),
+        'boq_rejected_count': BOQReport.objects.filter(client=client, client_status=BOQReport.CLIENT_REJECTED).count(),
+        # Filter state
+        'period': period,
+        'period_label': period_label,
+        'filter_start': filter_start,
+        'filter_end': filter_end,
+        'year_str': year_str,
+        'date_from_str': date_from_str,
+        'date_to_str': date_to_str,
+        'contractor_workspaces': contractor_workspaces,
+        'contractor_ws_id': contractor_ws_id,
+        'period_options': [
+            ('this_week', 'This Week'),
+            ('this_month', 'This Month'),
+            ('last_month', 'Last Month'),
+            ('year', 'Year'),
+            ('custom', 'Custom'),
+        ],
     }
     return render(request, 'core/client_dashboard.html', context)
 
 
 @login_required
+@client_required
 def client_approve_shift(request, pk):
     """
     Client approves or rejects a shift with comments.
@@ -1139,7 +1617,7 @@ def client_approve_shift(request, pk):
         client = request.user.client_profile
     except:
         messages.error(request, 'Your account is not linked to a client profile.')
-        return redirect('core:shift_list')
+        return redirect('accounts:profile')
     
     # Check if shift belongs to this client
     if shift.client != client:
@@ -1215,3 +1693,14 @@ def shift_pdf_export(request, pk):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     
     return response
+
+
+def handler404(request, exception=None):
+    """Custom 404 handler that renders the app-level 404 page."""
+    return render(request, '404.html', status=404)
+
+
+def handler500(request):
+    """Custom 500 handler that renders the app-level 500 page."""
+    return render(request, '500.html', status=500)
+

@@ -1,26 +1,87 @@
 from django import forms
 from django.forms import inlineformset_factory
-from .models import DrillShift, DrillingProgress, ActivityLog, MaterialUsed, Survey, Casing
+from .models import (
+    BOQReport, BOQAdditionalCharge, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, Survey, Casing, 
+    WorkspaceMembership, Workspace, DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset
+)
 
 
 class DrillShiftForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        if user:
+            # Filter clients based on user's workspace membership
+            # Client users can only select their own client
+            # Contractor users can create shifts for any client
+            
+            client_profile = getattr(user, 'client_profile', None)
+            if client_profile:
+                # User is a client - can only see their own client
+                self.fields['client'].queryset = client_profile.__class__.objects.filter(pk=client_profile.pk)
+                self.fields['client'].initial = client_profile
+            else:
+                # User is a contractor or admin - can see all active clients
+                self.fields['client'].queryset = self.fields['client'].queryset.filter(is_active=True)
+            
+            # Set contractor_workspace based on user's workspace membership
+            try:
+                contractor_ws = WorkspaceMembership.objects.filter(
+                    user=user,
+                    workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+                ).first()
+                
+                if contractor_ws:
+                    self.fields['contractor_workspace'].initial = contractor_ws.workspace
+                    # Limit contractor workspace choices to their own workspace
+                    self.fields['contractor_workspace'].queryset = Workspace.objects.filter(
+                        pk=contractor_ws.workspace.pk
+                    )
+            except Exception:
+                pass
+
     class Meta:
         model = DrillShift
-        fields = ['date', 'shift_type', 'client', 'rig', 'location', 
+        fields = ['date', 'shift_type', 'client', 'contractor_workspace', 'rig', 'location', 
                   'supervisor_name', 'driller_name', 'helper1_name', 'helper2_name', 'helper3_name', 'helper4_name',
                   'start_time', 'end_time', 'notes',
-                  'standby_client', 'standby_client_reason', 'standby_client_remarks',
-                  'standby_constructor', 'standby_constructor_reason', 'standby_constructor_remarks']
+                  'standby_client', 'standby_client_reason', 'standby_client_remarks', 'standby_client_start_time', 'standby_client_end_time',
+                  'standby_constructor', 'standby_constructor_reason', 'standby_constructor_remarks', 'standby_constructor_start_time', 'standby_constructor_end_time']
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date'}),
             'start_time': forms.TimeInput(attrs={'type': 'time'}),
             'end_time': forms.TimeInput(attrs={'type': 'time'}),
             'standby_client_remarks': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Additional details about client standby'}),
+            'standby_client_start_time': forms.TimeInput(attrs={'type': 'time'}),
+            'standby_client_end_time': forms.TimeInput(attrs={'type': 'time'}),
             'standby_constructor_remarks': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Additional details about constructor standby'}),
+            'standby_constructor_start_time': forms.TimeInput(attrs={'type': 'time'}),
+            'standby_constructor_end_time': forms.TimeInput(attrs={'type': 'time'}),
         }
 
 
 class DrillingProgressForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Populate bit size dropdown from approved drill size presets for the user's contractor workspace
+        if user is not None:
+            try:
+                contractor_ws = WorkspaceMembership.objects.filter(
+                    user=user,
+                    workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+                ).first()
+                if contractor_ws:
+                    approved_size_presets = DrillSizePreset.objects.filter(
+                        contractor_workspace=contractor_ws.workspace,
+                        client_status=DrillSizePreset.CLIENT_APPROVED
+                    ).order_by('name')
+                    if approved_size_presets.exists():
+                        choices = [('', 'Select bit size')] + [(preset.name, preset.name) for preset in approved_size_presets]
+                        self.fields['size'].choices = choices
+            except Exception:
+                pass
+
     class Meta:
         model = DrillingProgress
         fields = ['hole_number', 'size', 'start_depth', 'end_depth', 'meters_drilled', 
@@ -62,6 +123,203 @@ class CasingForm(forms.ModelForm):
         fields = ['casing_size', 'casing_type', 'start_depth', 'end_depth', 'length', 'remarks']
         widgets = {
             'remarks': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Installation notes'}),
+        }
+
+
+class BOQReportForm(forms.ModelForm):
+    """
+    Form for creating/editing BOQ Reports with preset selection.
+    """
+    drill_size_presets = forms.ModelMultipleChoiceField(
+        queryset=DrillSizePreset.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        help_text="Select approved drill size presets to include in this BOQ"
+    )
+    equipment_presets = forms.ModelMultipleChoiceField(
+        queryset=EquipmentPreset.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        help_text="Select approved equipment presets to include in this BOQ"
+    )
+    consumable_presets = forms.ModelMultipleChoiceField(
+        queryset=ConsumablePreset.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        help_text="Select approved consumable presets to include in this BOQ"
+    )
+    additional_charge_presets = forms.ModelMultipleChoiceField(
+        queryset=AdditionalChargePreset.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        help_text="Select approved contractor charges (+) and client deductions (-) to include in this BOQ"
+    )
+    
+    def __init__(self, *args, client=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Filter presets to only approved ones for the selected client
+        if client:
+            self.fields['drill_size_presets'].queryset = DrillSizePreset.objects.filter(
+                submitted_to_client=client,
+                client_status=DrillSizePreset.CLIENT_APPROVED
+            ).order_by('name')
+            self.fields['equipment_presets'].queryset = EquipmentPreset.objects.filter(
+                submitted_to_client=client,
+                client_status=EquipmentPreset.CLIENT_APPROVED
+            ).order_by('name')
+            self.fields['consumable_presets'].queryset = ConsumablePreset.objects.filter(
+                submitted_to_client=client,
+                client_status=ConsumablePreset.CLIENT_APPROVED
+            ).order_by('name')
+            # Additional charge presets: both contractor charges and client deductions
+            contractor_charges = AdditionalChargePreset.objects.filter(
+                submitted_to_client=client,
+                client_status=AdditionalChargePreset.CLIENT_APPROVED,
+                charge_type=AdditionalChargePreset.CHARGE_TYPE_CHARGE
+            )
+            client_deductions = AdditionalChargePreset.objects.filter(
+                workspace=client.workspace,
+                charge_type=AdditionalChargePreset.CHARGE_TYPE_DEDUCTION
+            ) if client.workspace else AdditionalChargePreset.objects.none()
+            self.fields['additional_charge_presets'].queryset = (contractor_charges | client_deductions).order_by('charge_type', 'name')
+        else:
+            # When no client is selected, show all approved presets so user can see the fields exist
+            self.fields['drill_size_presets'].queryset = DrillSizePreset.objects.filter(
+                client_status=DrillSizePreset.CLIENT_APPROVED
+            ).order_by('name')
+            self.fields['equipment_presets'].queryset = EquipmentPreset.objects.filter(
+                client_status=EquipmentPreset.CLIENT_APPROVED
+            ).order_by('name')
+            self.fields['consumable_presets'].queryset = ConsumablePreset.objects.filter(
+                client_status=ConsumablePreset.CLIENT_APPROVED
+            ).order_by('name')
+            # Additional charge presets: show all approved charges and all deductions
+            contractor_charges = AdditionalChargePreset.objects.filter(
+                client_status=AdditionalChargePreset.CLIENT_APPROVED,
+                charge_type=AdditionalChargePreset.CHARGE_TYPE_CHARGE
+            )
+            client_deductions = AdditionalChargePreset.objects.filter(
+                charge_type=AdditionalChargePreset.CHARGE_TYPE_DEDUCTION
+            )
+            self.fields['additional_charge_presets'].queryset = (contractor_charges | client_deductions).order_by('charge_type', 'name')
+    
+    class Meta:
+        model = BOQReport
+        fields = ['title', 'client', 'period_start', 'period_end', 'contractor_comments']
+        widgets = {
+            'period_start': forms.DateInput(attrs={'type': 'date'}),
+            'period_end': forms.DateInput(attrs={'type': 'date'}),
+            'contractor_comments': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Optional notes to accompany this BOQ draft'}),
+        }
+
+
+class BOQAdditionalChargeForm(forms.ModelForm):
+    class Meta:
+        model = BOQAdditionalCharge
+        fields = ['description', 'amount']
+        widgets = {
+            'description': forms.TextInput(attrs={'placeholder': 'e.g., Rig relocation fee'}),
+            'amount': forms.NumberInput(attrs={'step': '0.01'}),
+        }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Preset Forms (Drill Sizes, Equipment, Consumables)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class DrillSizePresetForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user and not user.is_superuser:
+            # Filter to user's contractor workspace
+            try:
+                contractor_ws = WorkspaceMembership.objects.filter(
+                    user=user,
+                    workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+                ).first()
+                if contractor_ws:
+                    self.fields['contractor_workspace'].queryset = Workspace.objects.filter(pk=contractor_ws.workspace.pk)
+                    self.fields['contractor_workspace'].initial = contractor_ws.workspace
+            except Exception:
+                pass
+
+    class Meta:
+        model = DrillSizePreset
+        fields = ['name', 'rate_per_meter', 'contractor_workspace', 'submitted_to_client']
+        widgets = {
+            'rate_per_meter': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Rate per meter'}),
+        }
+
+
+class EquipmentPresetForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user and not user.is_superuser:
+            try:
+                contractor_ws = WorkspaceMembership.objects.filter(
+                    user=user,
+                    workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+                ).first()
+                if contractor_ws:
+                    self.fields['contractor_workspace'].queryset = Workspace.objects.filter(pk=contractor_ws.workspace.pk)
+                    self.fields['contractor_workspace'].initial = contractor_ws.workspace
+            except Exception:
+                pass
+
+    class Meta:
+        model = EquipmentPreset
+        fields = ['name', 'rate', 'period', 'contractor_workspace', 'submitted_to_client']
+        widgets = {
+            'rate': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Rate amount'}),
+        }
+
+
+class ConsumablePresetForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user and not user.is_superuser:
+            try:
+                contractor_ws = WorkspaceMembership.objects.filter(
+                    user=user,
+                    workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+                ).first()
+                if contractor_ws:
+                    self.fields['contractor_workspace'].queryset = Workspace.objects.filter(pk=contractor_ws.workspace.pk)
+                    self.fields['contractor_workspace'].initial = contractor_ws.workspace
+            except Exception:
+                pass
+
+    class Meta:
+        model = ConsumablePreset
+        fields = ['name', 'rate', 'unit', 'contractor_workspace', 'submitted_to_client']
+        widgets = {
+            'rate': forms.NumberInput(attrs={'step': '0.01'}),
+            'unit': forms.TextInput(attrs={'placeholder': 'e.g., per unit, per meter'}),
+        }
+
+
+class AdditionalChargePresetForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user and not user.is_superuser:
+            try:
+                # Get user's workspaces (could be contractor or client)
+                user_workspaces = WorkspaceMembership.objects.filter(user=user).values_list('workspace', flat=True)
+                if user_workspaces:
+                    self.fields['workspace'].queryset = Workspace.objects.filter(pk__in=user_workspaces)
+                    # Set initial workspace if only one
+                    if len(user_workspaces) == 1:
+                        self.fields['workspace'].initial = user_workspaces[0]
+            except Exception:
+                pass
+
+    class Meta:
+        model = AdditionalChargePreset
+        fields = ['name', 'rate', 'unit', 'charge_type', 'workspace', 'submitted_to_client']
+        widgets = {
+            'rate': forms.NumberInput(attrs={'step': '0.01'}),
+            'unit': forms.TextInput(attrs={'placeholder': 'e.g., per unit, per trip, per day'}),
         }
 
 

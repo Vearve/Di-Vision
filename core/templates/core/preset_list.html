@@ -1,0 +1,313 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Manage Presets - Di-VisioN{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-sliders"></i> Preset Management</h2>
+        <p class="text-muted mb-0">Create and manage approved presets for BOQ line items</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'core:drill_size_preset_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New Drill Size Preset
+        </a>
+        <a href="{% url 'core:equipment_preset_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New Equipment Preset
+        </a>
+        <a href="{% url 'core:consumable_preset_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New Consumable Preset
+        </a>
+        <a href="{% url 'core:additional_charge_preset_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New Additional Charge Preset
+        </a>
+    </div>
+</div>
+
+<!-- Tabs Navigation -->
+<ul class="nav nav-tabs mb-4 border-bottom" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="drill-size-tab" data-bs-toggle="tab" data-bs-target="#drill-size-content" type="button" role="tab">
+            <i class="bi bi-speedometer"></i> Drill Size Services
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="equipment-tab" data-bs-toggle="tab" data-bs-target="#equipment-content" type="button" role="tab">
+            <i class="bi bi-tools"></i> Equipment
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="consumable-tab" data-bs-toggle="tab" data-bs-target="#consumable-content" type="button" role="tab">
+            <i class="bi bi-box-seam"></i> Consumables
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="additional-charge-tab" data-bs-toggle="tab" data-bs-target="#additional-charge-content" type="button" role="tab">
+            <i class="bi bi-cash-coin"></i> Additional Charges
+        </button>
+    </li>
+</ul>
+
+<!-- Tabs Content -->
+<div class="tab-content">
+    <!-- Drill Size Presets Tab -->
+    <div class="tab-pane fade show active" id="drill-size-content" role="tabpanel">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong>Drill Size Service Presets</strong>
+                    <a href="{% url 'core:drill_size_preset_create' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-plus-lg"></i> Add Preset
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if drill_size_presets %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr class="text-muted">
+                                <th>Name</th>
+                                <th class="text-end">Rate Per Meter</th>
+                                <th>Status</th>
+                                <th>Client Status</th>
+                                <th>Client</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for preset in drill_size_presets %}
+                            <tr>
+                                <td><strong>{{ preset.name }}</strong></td>
+                                <td class="text-end">${{ preset.rate_per_meter|floatformat:2 }}</td>
+                                <td>
+                                    <span class="badge {% if preset.status == 'draft' %}bg-secondary{% else %}bg-info{% endif %}">
+                                        {{ preset.get_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge {% if preset.client_status == 'approved' %}bg-success{% elif preset.client_status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                        {{ preset.get_client_status_display }}
+                                    </span>
+                                </td>
+                                <td>{{ preset.submitted_to_client.name|default:'—' }}</td>
+                                <td class="text-end">
+                                    <a href="{% url 'core:drill_size_preset_detail' preset.pk %}" class="btn btn-sm btn-outline-primary">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-muted py-4">
+                    <i class="bi bi-inbox"></i> No drill size presets created yet.
+                    <a href="{% url 'core:drill_size_preset_create' %}" class="link-primary">Create one now</a>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Equipment Presets Tab -->
+    <div class="tab-pane fade" id="equipment-content" role="tabpanel">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong>Equipment Presets</strong>
+                    <a href="{% url 'core:equipment_preset_create' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-plus-lg"></i> Add Preset
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if equipment_presets %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr class="text-muted">
+                                <th>Name</th>
+                                <th>Period</th>
+                                <th class="text-end">Rate</th>
+                                <th>Status</th>
+                                <th>Client Status</th>
+                                <th>Client</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for preset in equipment_presets %}
+                            <tr>
+                                <td><strong>{{ preset.name }}</strong></td>
+                                <td><span class="badge bg-light text-dark">{{ preset.get_period_display }}</span></td>
+                                <td class="text-end">${{ preset.rate|floatformat:2 }}</td>
+                                <td>
+                                    <span class="badge {% if preset.status == 'draft' %}bg-secondary{% else %}bg-info{% endif %}">
+                                        {{ preset.get_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge {% if preset.client_status == 'approved' %}bg-success{% elif preset.client_status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                        {{ preset.get_client_status_display }}
+                                    </span>
+                                </td>
+                                <td>{{ preset.submitted_to_client.name|default:'—' }}</td>
+                                <td class="text-end">
+                                    <a href="{% url 'core:equipment_preset_detail' preset.pk %}" class="btn btn-sm btn-outline-primary">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-muted py-4">
+                    <i class="bi bi-inbox"></i> No equipment presets created yet.
+                    <a href="{% url 'core:equipment_preset_create' %}" class="link-primary">Create one now</a>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Consumable Presets Tab -->
+    <div class="tab-pane fade" id="consumable-content" role="tabpanel">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong>Consumable Presets</strong>
+                    <a href="{% url 'core:consumable_preset_create' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-plus-lg"></i> Add Preset
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if consumable_presets %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr class="text-muted">
+                                <th>Name</th>
+                                <th class="text-end">Rate Per {{ unit_sample.unit|default:'Unit' }}</th>
+                                <th>Status</th>
+                                <th>Client Status</th>
+                                <th>Client</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for preset in consumable_presets %}
+                            <tr>
+                                <td><strong>{{ preset.name }}</strong></td>
+                                <td class="text-end">${{ preset.rate|floatformat:2 }} / {{ preset.unit }}</td>
+                                <td>
+                                    <span class="badge {% if preset.status == 'draft' %}bg-secondary{% else %}bg-info{% endif %}">
+                                        {{ preset.get_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge {% if preset.client_status == 'approved' %}bg-success{% elif preset.client_status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                        {{ preset.get_client_status_display }}
+                                    </span>
+                                </td>
+                                <td>{{ preset.submitted_to_client.name|default:'—' }}</td>
+                                <td class="text-end">
+                                    <a href="{% url 'core:consumable_preset_detail' preset.pk %}" class="btn btn-sm btn-outline-primary">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-muted py-4">
+                    <i class="bi bi-inbox"></i> No consumable presets created yet.
+                    <a href="{% url 'core:consumable_preset_create' %}" class="link-primary">Create one now</a>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Charge Presets Tab -->
+    <div class="tab-pane fade" id="additional-charge-content" role="tabpanel">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong>Additional Charge Presets</strong>
+                    <a href="{% url 'core:additional_charge_preset_create' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-plus-lg"></i> Add Preset
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if additional_charge_presets %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr class="text-muted">
+                                <th>Name</th>
+                                <th class="text-end">Rate Per {{ unit_sample.unit|default:'Unit' }}</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Client Status</th>
+                                <th>Client</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for preset in additional_charge_presets %}
+                            <tr>
+                                <td><strong>{{ preset.name }}</strong></td>
+                                <td class="text-end">
+                                    {% if preset.charge_type == 'deduction' %}−{% endif %}
+                                    ${{ preset.rate|floatformat:2 }} / {{ preset.unit }}
+                                </td>
+                                <td>
+                                    <span class="badge {% if preset.charge_type == 'charge' %}bg-success{% else %}bg-danger{% endif %}">
+                                        {% if preset.charge_type == 'charge' %}
+                                            <i class="bi bi-plus-circle"></i> Charge
+                                        {% else %}
+                                            <i class="bi bi-dash-circle"></i> Deduction
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge {% if preset.status == 'draft' %}bg-secondary{% else %}bg-info{% endif %}">
+                                        {{ preset.get_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge {% if preset.client_status == 'approved' %}bg-success{% elif preset.client_status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                        {{ preset.get_client_status_display }}
+                                    </span>
+                                </td>
+                                <td>{{ preset.submitted_to_client.name|default:'—' }}</td>
+                                <td class="text-end">
+                                    <a href="{% url 'core:additional_charge_preset_detail' preset.pk %}" class="btn btn-sm btn-outline-primary">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-muted py-4">
+                    <i class="bi bi-inbox"></i> No additional charge presets created yet.
+                    <a href="{% url 'core:additional_charge_preset_create' %}" class="link-primary">Create one now</a>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

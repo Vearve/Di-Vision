@@ -307,6 +307,22 @@ function addForm(prefix) {
                         {{ form.standby_client_remarks }}
                         {{ form.standby_client_remarks.errors }}
                     </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="pro-form-group">
+                                <label for="{{ form.standby_client_start_time.id_for_label }}" class="pro-label">Start Time</label>
+                                {{ form.standby_client_start_time }}
+                                {{ form.standby_client_start_time.errors }}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="pro-form-group">
+                                <label for="{{ form.standby_client_end_time.id_for_label }}" class="pro-label">End Time</label>
+                                {{ form.standby_client_end_time }}
+                                {{ form.standby_client_end_time.errors }}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -332,6 +348,22 @@ function addForm(prefix) {
                         <label for="{{ form.standby_constructor_remarks.id_for_label }}" class="pro-label">Remarks</label>
                         {{ form.standby_constructor_remarks }}
                         {{ form.standby_constructor_remarks.errors }}
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="pro-form-group">
+                                <label for="{{ form.standby_constructor_start_time.id_for_label }}" class="pro-label">Start Time</label>
+                                {{ form.standby_constructor_start_time }}
+                                {{ form.standby_constructor_start_time.errors }}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="pro-form-group">
+                                <label for="{{ form.standby_constructor_end_time.id_for_label }}" class="pro-label">End Time</label>
+                                {{ form.standby_constructor_end_time }}
+                                {{ form.standby_constructor_end_time.errors }}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

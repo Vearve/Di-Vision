@@ -1,0 +1,425 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Preset Approvals - {{ client.name }} - Di-VisioN{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-check2-square"></i> Preset Approvals</h2>
+        <p class="text-muted mb-0">Review and approve presets submitted by contractors</p>
+    </div>
+    {% if total_pending %}
+    <div class="badge bg-warning text-dark" style="padding: 10px 15px; font-size: 1.1rem;">
+        <i class="bi bi-clock"></i> {{ total_pending }} Pending Approval
+    </div>
+    {% endif %}
+</div>
+
+<!-- Pending Approvals Section -->
+{% if total_pending > 0 %}
+<div class="mb-4">
+    <h4 class="mb-3"><i class="bi bi-hourglass-split"></i> Pending Approvals</h4>
+    
+    <!-- Drill Size Pending -->
+    {% if pending_drill_size %}
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-light">
+            <div class="d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-speedometer"></i> Drill Size Services ({{ pending_drill_size.count }})</strong>
+                <span class="badge bg-warning">PENDING</span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Preset Name</th>
+                            <th>Contractor</th>
+                            <th class="text-end">Rate Per Meter</th>
+                            <th>Submitted</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for preset in pending_drill_size %}
+                        <tr>
+                            <td><strong>{{ preset.name }}</strong></td>
+                            <td>{{ preset.contractor_workspace.name }}</td>
+                            <td class="text-end">${{ preset.rate_per_meter|floatformat:2 }}</td>
+                            <td><small class="text-muted">{{ preset.submitted_to_client_at|date:'M d, Y' }}</small></td>
+                            <td class="text-end">
+                                <a href="{% url 'core:drill_size_preset_detail' preset.pk %}" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-eye"></i> Review & Approve
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Equipment Pending -->
+    {% if pending_equipment %}
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-light">
+            <div class="d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-tools"></i> Equipment ({{ pending_equipment.count }})</strong>
+                <span class="badge bg-warning">PENDING</span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Equipment Name</th>
+                            <th>Contractor</th>
+                            <th>Period</th>
+                            <th class="text-end">Rate</th>
+                            <th>Submitted</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for preset in pending_equipment %}
+                        <tr>
+                            <td><strong>{{ preset.name }}</strong></td>
+                            <td>{{ preset.contractor_workspace.name }}</td>
+                            <td><span class="badge bg-light text-dark">{{ preset.get_period_display }}</span></td>
+                            <td class="text-end">${{ preset.rate|floatformat:2 }}</td>
+                            <td><small class="text-muted">{{ preset.submitted_to_client_at|date:'M d, Y' }}</small></td>
+                            <td class="text-end">
+                                <a href="{% url 'core:equipment_preset_detail' preset.pk %}" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-eye"></i> Review & Approve
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Consumables Pending -->
+    {% if pending_consumables %}
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-light">
+            <div class="d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-box-seam"></i> Consumables ({{ pending_consumables.count }})</strong>
+                <span class="badge bg-warning">PENDING</span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Material Name</th>
+                            <th>Contractor</th>
+                            <th class="text-end">Rate Per Unit</th>
+                            <th>Unit</th>
+                            <th>Submitted</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for preset in pending_consumables %}
+                        <tr>
+                            <td><strong>{{ preset.name }}</strong></td>
+                            <td>{{ preset.contractor_workspace.name }}</td>
+                            <td class="text-end">${{ preset.rate|floatformat:2 }}</td>
+                            <td>{{ preset.unit }}</td>
+                            <td><small class="text-muted">{{ preset.submitted_to_client_at|date:'M d, Y' }}</small></td>
+                            <td class="text-end">
+                                <a href="{% url 'core:consumable_preset_detail' preset.pk %}" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-eye"></i> Review & Approve
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Additional Charges Pending -->
+    {% if pending_additional_charges %}
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-light">
+            <div class="d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-cash-coin"></i> Additional Charges ({{ pending_additional_charges.count }})</strong>
+                <span class="badge bg-warning">PENDING</span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Charge Name</th>
+                            <th>Contractor</th>
+                            <th class="text-end">Rate Per Unit</th>
+                            <th>Type</th>
+                            <th>Unit</th>
+                            <th>Submitted</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for preset in pending_additional_charges %}
+                        <tr>
+                            <td><strong>{{ preset.name }}</strong></td>
+                            <td>{{ preset.workspace.name }}</td>
+                            <td class="text-end">
+                                {% if preset.charge_type == 'deduction' %}−{% endif %}
+                                ${{ preset.rate|floatformat:2 }}
+                            </td>
+                            <td>
+                                <span class="badge {% if preset.charge_type == 'charge' %}bg-success{% else %}bg-danger{% endif %}">
+                                    {% if preset.charge_type == 'charge' %}
+                                        <i class="bi bi-plus-circle"></i> Charge
+                                    {% else %}
+                                        <i class="bi bi-dash-circle"></i> Deduction
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td>{{ preset.unit }}</td>
+                            <td><small class="text-muted">{{ preset.submitted_to_client_at|date:'M d, Y' }}</small></td>
+                            <td class="text-end">
+                                <a href="{% url 'core:additional_charge_preset_detail' preset.pk %}" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-eye"></i> Review & Approve
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="alert alert-success mb-4" role="alert">
+    <i class="bi bi-check-circle"></i>
+    <strong>All Set!</strong> You have no pending preset approvals at this time.
+</div>
+{% endif %}
+
+<!-- Approved Presets Section -->
+<div class="mb-4">
+    <h4 class="mb-3"><i class="bi bi-check-circle"></i> Approved Presets</h4>
+    
+    {% if approved_drill_size or approved_equipment or approved_consumables or approved_additional_charges %}
+        <!-- Approved Drill Size -->
+        {% if approved_drill_size %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-speedometer"></i> Drill Size Services ({{ approved_drill_size.count }})</strong>
+                    <span class="badge bg-success">APPROVED</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Preset Name</th>
+                                <th>Contractor</th>
+                                <th class="text-end">Rate Per Meter</th>
+                                <th>Approved</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for preset in approved_drill_size %}
+                            <tr>
+                                <td><strong>{{ preset.name }}</strong></td>
+                                <td>{{ preset.contractor_workspace.name }}</td>
+                                <td class="text-end">${{ preset.rate_per_meter|floatformat:2 }}</td>
+                                <td><small class="text-muted">{{ preset.client_approved_at|date:'M d, Y' }}</small></td>
+                                <td class="text-end">
+                                    <span class="badge bg-success">Locked</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Approved Equipment -->
+        {% if approved_equipment %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-tools"></i> Equipment ({{ approved_equipment.count }})</strong>
+                    <span class="badge bg-success">APPROVED</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Equipment Name</th>
+                                <th>Contractor</th>
+                                <th>Period</th>
+                                <th class="text-end">Rate</th>
+                                <th>Approved</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for preset in approved_equipment %}
+                            <tr>
+                                <td><strong>{{ preset.name }}</strong></td>
+                                <td>{{ preset.contractor_workspace.name }}</td>
+                                <td><span class="badge bg-light text-dark">{{ preset.get_period_display }}</span></td>
+                                <td class="text-end">${{ preset.rate|floatformat:2 }}</td>
+                                <td><small class="text-muted">{{ preset.client_approved_at|date:'M d, Y' }}</small></td>
+                                <td class="text-end">
+                                    <span class="badge bg-success">Locked</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Approved Consumables -->
+        {% if approved_consumables %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-box-seam"></i> Consumables ({{ approved_consumables.count }})</strong>
+                    <span class="badge bg-success">APPROVED</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Material Name</th>
+                                <th>Contractor</th>
+                                <th class="text-end">Rate Per Unit</th>
+                                <th>Unit</th>
+                                <th>Approved</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for preset in approved_consumables %}
+                            <tr>
+                                <td><strong>{{ preset.name }}</strong></td>
+                                <td>{{ preset.contractor_workspace.name }}</td>
+                                <td class="text-end">${{ preset.rate|floatformat:2 }}</td>
+                                <td>{{ preset.unit }}</td>
+                                <td><small class="text-muted">{{ preset.client_approved_at|date:'M d, Y' }}</small></td>
+                                <td class="text-end">
+                                    <span class="badge bg-success">Locked</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Approved Additional Charges -->
+        {% if approved_additional_charges %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-cash-coin"></i> Additional Charges ({{ approved_additional_charges.count }})</strong>
+                    <span class="badge bg-success">APPROVED</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Charge Name</th>
+                                <th>Contractor</th>
+                                <th class="text-end">Rate Per Unit</th>
+                                <th>Type</th>
+                                <th>Unit</th>
+                                <th>Approved</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for preset in approved_additional_charges %}
+                            <tr>
+                                <td><strong>{{ preset.name }}</strong></td>
+                                <td>{{ preset.workspace.name }}</td>
+                                <td class="text-end">
+                                    {% if preset.charge_type == 'deduction' %}−{% endif %}
+                                    ${{ preset.rate|floatformat:2 }}
+                                </td>
+                                <td>
+                                    <span class="badge {% if preset.charge_type == 'charge' %}bg-success{% else %}bg-danger{% endif %}">
+                                        {% if preset.charge_type == 'charge' %}
+                                            <i class="bi bi-plus-circle"></i> Charge
+                                        {% else %}
+                                            <i class="bi bi-dash-circle"></i> Deduction
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td>{{ preset.unit }}</td>
+                                <td><small class="text-muted">{{ preset.client_approved_at|date:'M d, Y' }}</small></td>
+                                <td class="text-end">
+                                    <span class="badge bg-success">Locked</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            <i class="bi bi-info-circle"></i>
+            <strong>No approved presets yet.</strong> Approved presets will appear here once you approve preset submissions from contractors.
+        </div>
+    {% endif %}
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6 offset-md-3">
+        <div class="card border-0 bg-light">
+            <div class="card-body text-center">
+                <h6 class="mb-2">How the Approval Process Works</h6>
+                <ol class="text-muted small text-start" style="margin: 0; padding-left: 20px;">
+                    <li><strong>Contractors</strong> create presets (drill services, equipment, consumables)</li>
+                    <li><strong>Contractors</strong> submit presets to your company for approval</li>
+                    <li><strong>You (Client)</strong> review the proposed rates</li>
+                    <li><strong>You approve or reject</strong> with optional comments</li>
+                    <li><strong>Approved presets</strong> become locked and usable in BOQ reports</li>
+                    <li><strong>Contractors</strong> use approved presets when creating BOQs</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

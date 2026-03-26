@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: ddr-postgres
+    environment:
+      POSTGRES_DB: dailydrillreport_db
+      POSTGRES_USER: ddr_user
+      POSTGRES_PASSWORD: ddr_pass
+    volumes:
+      - ddr_pgdata:/var/lib/postgresql/data
+    networks:
+      - ddr-net
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+  web:
+    build: .
+    container_name: dailydrillreport
+    env_file:
+      - .env.docker
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    networks:
+      - ddr-net
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+networks:
+  ddr-net:
+
+volumes:
+  ddr_pgdata:

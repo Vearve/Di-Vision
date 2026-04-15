@@ -1,0 +1,250 @@
+{% extends 'core/base.html' %}
+{% block title %}{{ action }} Drill Hole{% endblock %}
+{% block extra_css %}
+<style>
+  .formset-row { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+  .formset-row:nth-child(even) { background: #fff; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-layers me-2"></i>{{ action }} Drill Hole</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item active">{{ action }}</li>
+      </ol></nav>
+    </div>
+  </div>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+
+    <!-- Hole metadata -->
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header"><h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Hole Information</h5></div>
+      <div class="card-body">
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Hole ID *</label>
+            {{ form.hole_id.as_widget }}{% if form.hole_id.errors %}<div class="text-danger small">{{ form.hole_id.errors }}</div>{% endif %}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Client</label>
+            {{ form.client.as_widget }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Project Name</label>
+            {{ form.project_name.as_widget }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Drilled Date</label>
+            {{ form.drilled_date.as_widget }}
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Location Description</label>
+            {{ form.location_description.as_widget }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Coordinates -->
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header"><h5 class="mb-0"><i class="bi bi-geo-alt me-2"></i>Coordinates &amp; Geometry</h5></div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Latitude (°)</label>
+            {{ form.latitude.as_widget }}
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Longitude (°)</label>
+            {{ form.longitude.as_widget }}
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Elevation (m)</label>
+            {{ form.elevation.as_widget }}
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Easting (m)</label>
+            {{ form.easting.as_widget }}
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Northing (m)</label>
+            {{ form.northing.as_widget }}
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Total Depth (m)</label>
+            {{ form.total_depth.as_widget }}
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Dip (°)</label>
+            {{ form.dip.as_widget }}
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Azimuth (°)</label>
+            {{ form.azimuth.as_widget }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-body">
+        <label class="form-label fw-semibold">Notes</label>
+        {{ form.notes.as_widget }}
+      </div>
+    </div>
+
+    <!-- Lithology Intervals formset -->
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-list-columns me-2"></i>Lithology Intervals</h5>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="add-interval">
+          <i class="bi bi-plus-lg me-1"></i>Add Interval
+        </button>
+      </div>
+      <div class="card-body">
+        {{ formset.management_form }}
+        <div id="formset-container">
+          {% for form_iv in formset %}
+          <div class="formset-row row g-2 align-items-start" id="interval-{{ forloop.counter0 }}">
+            {% for hidden in form_iv.hidden_fields %}{{ hidden }}{% endfor %}
+            {% if form_iv.instance.pk %}
+              {{ form_iv.DELETE.as_hidden }}
+            {% else %}
+              {% if form_iv.DELETE %}
+              <input type="hidden" name="{{ form_iv.DELETE.html_name }}" value="">
+              {% endif %}
+            {% endif %}
+            <div class="col-md-1">
+              <label class="form-label small">From (m)</label>
+              {{ form_iv.depth_from.as_widget }}
+              {% if form_iv.depth_from.errors %}<div class="text-danger small">{{ form_iv.depth_from.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">To (m)</label>
+              {{ form_iv.depth_to.as_widget }}
+              {% if form_iv.depth_to.errors %}<div class="text-danger small">{{ form_iv.depth_to.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small">Lithology</label>
+              {{ form_iv.lithology_code.as_widget }}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small">Hardness</label>
+              {{ form_iv.hardness.as_widget }}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small">Weathering</label>
+              {{ form_iv.weathering.as_widget }}
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">Recovery %</label>
+              {{ form_iv.recovery_pct.as_widget }}
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">Colour</label>
+              {{ form_iv.colour.as_widget }}
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+              {% if form_iv.instance.pk %}
+              <div class="form-check mt-4">
+                {{ form_iv.DELETE }}
+                <label class="form-check-label text-danger small">Delete</label>
+              </div>
+              {% else %}
+              <button type="button" class="btn btn-sm btn-outline-danger remove-row mt-4">
+                <i class="bi bi-trash"></i>
+              </button>
+              {% endif %}
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Description</label>
+              {{ form_iv.description.as_widget }}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Hole</button>
+      <a href="{% url 'core:drill_hole_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  const container = document.getElementById('formset-container');
+  const totalForms = document.getElementById('id_lithologyinterval_set-TOTAL_FORMS');
+
+  // Apply Bootstrap classes to all form widgets
+  document.querySelectorAll('#formset-container input, #formset-container select, #formset-container textarea').forEach(el => {
+    if (!el.classList.contains('form-check-input')) {
+      el.classList.add('form-control', 'form-control-sm');
+      if (el.tagName === 'SELECT') {
+        el.classList.remove('form-control');
+        el.classList.add('form-select', 'form-select-sm');
+      }
+    }
+  });
+
+  document.getElementById('add-interval').addEventListener('click', function () {
+    const idx = parseInt(totalForms.value);
+    const template = container.querySelector('.formset-row:last-child').cloneNode(true);
+    // Update form index in name/id attributes
+    template.innerHTML = template.innerHTML.replace(/-(\d+)-/g, `-${idx}-`);
+    template.id = `interval-${idx}`;
+    // Clear input values
+    template.querySelectorAll('input[type=text], input[type=number], textarea').forEach(el => el.value = '');
+    template.querySelectorAll('select').forEach(el => el.selectedIndex = 0);
+    // Re-apply classes
+    template.querySelectorAll('input, select, textarea').forEach(el => {
+      if (!el.classList.contains('form-check-input')) {
+        el.classList.add('form-control', 'form-control-sm');
+        if (el.tagName === 'SELECT') {
+          el.classList.remove('form-control');
+          el.classList.add('form-select', 'form-select-sm');
+        }
+      }
+    });
+    container.appendChild(template);
+    totalForms.value = idx + 1;
+  });
+
+  container.addEventListener('click', function (e) {
+    if (e.target.closest('.remove-row')) {
+      e.target.closest('.formset-row').remove();
+      // Renumber
+      const rows = container.querySelectorAll('.formset-row');
+      rows.forEach((row, i) => {
+        row.innerHTML = row.innerHTML.replace(/-\d+-/g, `-${i}-`);
+      });
+      totalForms.value = rows.length;
+    }
+  });
+
+  // Apply classes to main form fields too
+  document.querySelectorAll('.card-body input, .card-body select, .card-body textarea').forEach(el => {
+    if (!el.classList.contains('form-control') && !el.classList.contains('form-select') && el.type !== 'hidden' && !el.classList.contains('form-check-input')) {
+      el.classList.add('form-control');
+      if (el.tagName === 'SELECT') {
+        el.classList.remove('form-control');
+        el.classList.add('form-select');
+      }
+    }
+  });
+})();
+</script>
+{% endblock %}

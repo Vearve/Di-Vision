@@ -1,0 +1,80 @@
+{% extends 'core/base.html' %}
+{% block title %}Drill Holes – Geology{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-layers me-2"></i>Drill Holes</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item active">Geology – Drill Holes</li>
+      </ol></nav>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'core:geology_map' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-map me-1"></i>2D Map
+      </a>
+      <a href="{% url 'core:cross_section' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-layout-split me-1"></i>Cross Section
+      </a>
+      <a href="{% url 'core:drill_hole_create' %}" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>New Hole
+      </a>
+    </div>
+  </div>
+
+  <!-- Filter -->
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+      <select name="client_id" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">All Clients</option>
+        {% for client in clients %}
+        <option value="{{ client.pk }}" {% if filter_client_id == client.pk|stringformat:'s' %}selected{% endif %}>
+          {{ client.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+
+  {% if holes %}
+  <div class="row g-3">
+    {% for hole in holes %}
+    <div class="col-md-4 col-lg-3">
+      <div class="card h-100 shadow-sm border-0">
+        <div class="card-body">
+          <h5 class="card-title mb-1">
+            <a href="{% url 'core:drill_hole_detail' hole.pk %}" class="text-decoration-none">{{ hole.hole_id }}</a>
+          </h5>
+          {% if hole.project_name %}<p class="text-muted small mb-1">{{ hole.project_name }}</p>{% endif %}
+          {% if hole.client %}<p class="text-muted small mb-1"><i class="bi bi-building me-1"></i>{{ hole.client }}</p>{% endif %}
+          <div class="mt-2">
+            {% if hole.total_depth %}<span class="badge bg-primary me-1">{{ hole.total_depth }} m</span>{% endif %}
+            {% if hole.drilled_date %}<span class="badge bg-secondary">{{ hole.drilled_date }}</span>{% endif %}
+          </div>
+          {% with count=hole.lithology_intervals.count %}
+          <p class="text-muted small mt-2 mb-0">
+            <i class="bi bi-list-ul me-1"></i>{{ count }} lithology interval{{ count|pluralize }}
+          </p>
+          {% endwith %}
+        </div>
+        <div class="card-footer bg-transparent border-0 pt-0">
+          <a href="{% url 'core:drill_hole_detail' hole.pk %}" class="btn btn-sm btn-outline-primary me-1">
+            <i class="bi bi-eye"></i> View
+          </a>
+          <a href="{% url 'core:drill_hole_edit' hole.pk %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-pencil"></i> Edit
+          </a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-5 text-muted">
+    <i class="bi bi-layers display-3 mb-3 d-block"></i>
+    <p>No drill holes found. <a href="{% url 'core:drill_hole_create' %}">Create the first one</a>.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

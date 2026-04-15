@@ -1,0 +1,193 @@
+{% extends 'core/base.html' %}
+{% block title %}{{ hole.hole_id }} – Strip Log{% endblock %}
+{% block extra_css %}
+<style>
+  .strip-log-container { position: relative; width: 80px; min-height: 400px; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; }
+  .strip-segment { position: absolute; width: 100%; transition: opacity .15s; cursor: pointer; }
+  .strip-segment:hover { opacity: .75; }
+  .depth-axis { position: relative; min-height: 400px; width: 50px; }
+  .depth-tick { position: absolute; right: 4px; font-size: 11px; color: #666; transform: translateY(-50%); }
+  .legend-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; vertical-align: middle; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-layers me-2"></i>{{ hole.hole_id }}</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item active">{{ hole.hole_id }}</li>
+      </ol></nav>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'core:drill_hole_edit' hole.pk %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-pencil me-1"></i>Edit
+      </a>
+      <a href="{% url 'core:cross_section' %}?holes={{ hole.pk }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-layout-split me-1"></i>Cross Section
+      </a>
+      <a href="{% url 'core:drill_hole_delete' hole.pk %}" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-trash me-1"></i>Delete
+      </a>
+    </div>
+  </div>
+
+  <!-- Metadata cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center">
+          <h2 class="display-6 mb-0">{{ hole.hole_id }}</h2>
+          <small class="text-muted">{{ hole.project_name|default:"—" }}</small>
+          {% if hole.client %}<p class="mb-0 mt-1"><span class="badge bg-secondary">{{ hole.client }}</span></p>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <h6 class="text-muted mb-1">Coordinates</h6>
+          {% if hole.latitude and hole.longitude %}
+          <p class="mb-1 small"><strong>Lat:</strong> {{ hole.latitude }}°</p>
+          <p class="mb-1 small"><strong>Lon:</strong> {{ hole.longitude }}°</p>
+          {% else %}
+          <p class="text-muted small mb-0">No GPS coordinates</p>
+          {% endif %}
+          {% if hole.elevation %}<p class="mb-0 small"><strong>Elev:</strong> {{ hole.elevation }} m</p>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <h6 class="text-muted mb-1">Geometry</h6>
+          <p class="mb-1 small"><strong>Total Depth:</strong> {{ hole.total_depth|default:"—" }} m</p>
+          <p class="mb-1 small"><strong>Dip:</strong> {{ hole.dip|default:"—" }}°</p>
+          <p class="mb-0 small"><strong>Azimuth:</strong> {{ hole.azimuth|default:"—" }}°</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <h6 class="text-muted mb-1">Log Summary</h6>
+          <p class="mb-1 small"><strong>Intervals logged:</strong> {{ intervals.count }}</p>
+          <p class="mb-1 small"><strong>Max logged depth:</strong> {{ max_depth }} m</p>
+          {% if hole.drilled_date %}<p class="mb-0 small"><strong>Drilled:</strong> {{ hole.drilled_date }}</p>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if notes %}
+  <div class="alert alert-light border mb-4"><strong>Notes:</strong> {{ hole.notes }}</div>
+  {% endif %}
+
+  <!-- Strip log + interval table -->
+  <div class="row g-4">
+    <!-- Strip Log -->
+    <div class="col-md-4 col-lg-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header"><h5 class="mb-0"><i class="bi bi-bar-chart-steps me-2"></i>Strip Log</h5></div>
+        <div class="card-body">
+          {% if strip_log %}
+          <div class="d-flex gap-2">
+            <!-- Depth axis -->
+            <div class="depth-axis" style="min-height: 500px;">
+              {% for item in strip_log %}
+              <span class="depth-tick" style="top: calc({{ item.top_pct }}% + 0px);">{{ item.interval.depth_from|floatformat:0 }}m</span>
+              {% endfor %}
+              <span class="depth-tick" style="top: 99%;">{{ max_depth|floatformat:0 }}m</span>
+            </div>
+            <!-- Colour column -->
+            <div class="strip-log-container" style="min-height: 500px;">
+              {% for item in strip_log %}
+              <div class="strip-segment"
+                   style="background-color: {{ item.colour }}; top: {{ item.top_pct }}%; height: {{ item.height_pct }}%;"
+                   title="{{ item.interval.get_lithology_code_display }}: {{ item.interval.depth_from }}–{{ item.interval.depth_to }}m"
+                   data-bs-toggle="tooltip">
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          <!-- Legend -->
+          <div class="mt-3">
+            {% for item in strip_log %}
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <span class="legend-swatch" style="background:{{ item.colour }};"></span>
+              <small>{{ item.interval.get_lithology_code_display }}</small>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted text-center py-3">No lithology intervals logged yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Interval Table -->
+    <div class="col-md-8 col-lg-9">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-list-columns me-2"></i>Lithology Log</h5>
+          <a href="{% url 'core:drill_hole_edit' hole.pk %}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-pencil me-1"></i>Edit Intervals
+          </a>
+        </div>
+        <div class="card-body p-0">
+          {% if intervals %}
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>From (m)</th>
+                  <th>To (m)</th>
+                  <th>Length (m)</th>
+                  <th>Lithology</th>
+                  <th>Hardness</th>
+                  <th>Weathering</th>
+                  <th>Recovery %</th>
+                  <th>Description</th>
+                  <th>Colour</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for iv in intervals %}
+                <tr>
+                  <td>{{ iv.depth_from }}</td>
+                  <td>{{ iv.depth_to }}</td>
+                  <td>{{ iv.interval_length|floatformat:2 }}</td>
+                  <td><strong>{{ iv.get_lithology_code_display }}</strong></td>
+                  <td>{{ iv.get_hardness_display|default:"—" }}</td>
+                  <td>{{ iv.get_weathering_display|default:"—" }}</td>
+                  <td>{% if iv.recovery_pct %}{{ iv.recovery_pct }}%{% else %}—{% endif %}</td>
+                  <td class="text-muted small">{{ iv.description|default:"—" }}</td>
+                  <td>
+                    <span style="display:inline-block;width:24px;height:24px;background:{{ iv.display_colour }};border-radius:4px;border:1px solid #ccc;"></span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="text-center py-4 text-muted">
+            <p>No intervals logged. <a href="{% url 'core:drill_hole_edit' hole.pk %}">Add lithology intervals</a>.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+// Activate Bootstrap tooltips
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+</script>
+{% endblock %}

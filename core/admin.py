@@ -8,7 +8,8 @@ from django.utils.crypto import get_random_string
 from .models import (
     BOQReport, BOQLineItem, Client, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, 
     ApprovalHistory, Survey, Casing, Workspace, WorkspaceMembership,
-    DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset
+    DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset,
+    DrillHole, LithologyInterval,
 )
 
 # Customize admin site
@@ -372,3 +373,54 @@ class AdditionalChargePresetAdmin(admin.ModelAdmin):
         }),
     )
     ordering = ('-created_at',)
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Geology Administration
+# ──────────────────────────────────────────────────────────────────────────────
+
+class LithologyIntervalInline(admin.TabularInline):
+    model = LithologyInterval
+    extra = 1
+    fields = ('depth_from', 'depth_to', 'lithology_code', 'description', 'hardness', 'weathering', 'recovery_pct')
+    ordering = ('depth_from',)
+
+
+@admin.register(DrillHole)
+class DrillHoleAdmin(admin.ModelAdmin):
+    list_display = ('hole_id', 'client', 'project_name', 'latitude', 'longitude', 'total_depth', 'drilled_date', 'created_by', 'created_at')
+    list_filter = ('client', 'drilled_date')
+    search_fields = ('hole_id', 'project_name', 'location_description')
+    readonly_fields = ('created_at', 'updated_at')
+    inlines = [LithologyIntervalInline]
+    fieldsets = (
+        ('Hole Identification', {
+            'fields': ('hole_id', 'client', 'project_name', 'location_description', 'drilled_date')
+        }),
+        ('GPS Coordinates', {
+            'fields': ('latitude', 'longitude', 'elevation')
+        }),
+        ('Local Grid', {
+            'fields': ('easting', 'northing'),
+            'classes': ('collapse',),
+        }),
+        ('Hole Geometry', {
+            'fields': ('total_depth', 'dip', 'azimuth')
+        }),
+        ('Notes', {
+            'fields': ('notes',)
+        }),
+        ('Audit', {
+            'fields': ('created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+
+@admin.register(LithologyInterval)
+class LithologyIntervalAdmin(admin.ModelAdmin):
+    list_display = ('drill_hole', 'depth_from', 'depth_to', 'lithology_code', 'hardness', 'weathering', 'recovery_pct')
+    list_filter = ('lithology_code', 'hardness', 'weathering', 'drill_hole__client')
+    search_fields = ('drill_hole__hole_id', 'description')
+    ordering = ('drill_hole__hole_id', 'depth_from')

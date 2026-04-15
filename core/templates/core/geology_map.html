@@ -1,0 +1,175 @@
+{% extends 'core/base.html' %}
+{% block title %}Geology Map – Di-VisioN{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  #geology-map { height: 600px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+  .hole-popup h6 { margin-bottom: 4px; }
+  .litho-badge { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-map me-2"></i>Geology Map</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item active">2D Map</li>
+      </ol></nav>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'core:drill_hole_list' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-list-ul me-1"></i>Hole List
+      </a>
+      <a href="{% url 'core:cross_section' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-layout-split me-1"></i>Cross Section
+      </a>
+      <a href="{% url 'core:drill_hole_create' %}" class="btn btn-sm btn-primary">
+        <i class="bi bi-plus-lg me-1"></i>New Hole
+      </a>
+    </div>
+  </div>
+
+  <!-- Filter -->
+  <div class="row g-2 mb-3">
+    <div class="col-auto">
+      <select id="client-filter" class="form-select form-select-sm">
+        <option value="">All Clients</option>
+        {% for client in clients %}
+        <option value="{{ client.pk }}" {% if filter_client_id == client.pk|stringformat:'s' %}selected{% endif %}>
+          {{ client.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <span class="badge bg-secondary align-middle" id="hole-count">Loading…</span>
+    </div>
+  </div>
+
+  <div id="geology-map"></div>
+
+  <div class="card border-0 shadow-sm mt-3">
+    <div class="card-header"><h6 class="mb-0">Drill Holes on Map</h6></div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0" id="holes-table">
+          <thead class="table-light">
+            <tr>
+              <th>Hole ID</th><th>Project</th><th>Client</th>
+              <th>Lat</th><th>Lon</th><th>Depth (m)</th><th>Top Lithology</th>
+            </tr>
+          </thead>
+          <tbody id="holes-tbody">
+            <tr><td colspan="7" class="text-center text-muted py-3">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  const map = L.map('geology-map').setView([0, 0], 2);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(map);
+
+  let markers = [];
+  let allFeatures = [];
+
+  function makeIcon(colour) {
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:18px;height:18px;background:${colour};border:2px solid #333;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+  }
+
+  function renderMarkers(features) {
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+    const bounds = [];
+    const tbody = document.getElementById('holes-tbody');
+    tbody.innerHTML = '';
+
+    if (features.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No holes with GPS coordinates found.</td></tr>';
+      document.getElementById('hole-count').textContent = '0 holes';
+      return;
+    }
+
+    document.getElementById('hole-count').textContent = `${features.length} hole${features.length !== 1 ? 's' : ''}`;
+
+    features.forEach(f => {
+      const p = f.properties;
+      const [lon, lat] = f.geometry.coordinates;
+      const marker = L.marker([lat, lon], { icon: makeIcon(p.marker_colour) })
+        .addTo(map)
+        .bindPopup(`
+          <div class="hole-popup">
+            <h6><a href="${p.detail_url}">${p.hole_id}</a></h6>
+            ${p.project ? `<p class="mb-1 small text-muted">${p.project}</p>` : ''}
+            ${p.client ? `<p class="mb-1 small"><strong>Client:</strong> ${p.client}</p>` : ''}
+            ${p.total_depth ? `<p class="mb-1 small"><strong>Depth:</strong> ${p.total_depth} m</p>` : ''}
+            <p class="mb-0 small">
+              <span class="litho-badge" style="background:${p.marker_colour}"></span>
+              <strong>Top:</strong> ${p.top_litho}
+            </p>
+          </div>`);
+      markers.push(marker);
+      bounds.push([lat, lon]);
+
+      // Table row
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML = `
+        <td><a href="${p.detail_url}">${p.hole_id}</a></td>
+        <td>${p.project || '—'}</td>
+        <td>${p.client || '—'}</td>
+        <td>${lat.toFixed(5)}</td>
+        <td>${lon.toFixed(5)}</td>
+        <td>${p.total_depth !== null ? p.total_depth : '—'}</td>
+        <td><span class="litho-badge" style="background:${p.marker_colour}"></span>${p.top_litho}</td>`;
+      tr.addEventListener('click', () => {
+        map.setView([lat, lon], 14);
+        marker.openPopup();
+      });
+      tbody.appendChild(tr);
+    });
+
+    if (bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [40, 40] });
+    }
+  }
+
+  function loadData(clientId) {
+    const url = '{% url "core:geology_map_data" %}' + (clientId ? `?client_id=${clientId}` : '');
+    fetch(url)
+      .then(r => r.json())
+      .then(geojson => {
+        allFeatures = geojson.features || [];
+        renderMarkers(allFeatures);
+      })
+      .catch(() => {
+        document.getElementById('holes-tbody').innerHTML =
+          '<tr><td colspan="7" class="text-center text-danger py-3">Error loading data.</td></tr>';
+      });
+  }
+
+  document.getElementById('client-filter').addEventListener('change', function () {
+    loadData(this.value);
+  });
+
+  loadData(document.getElementById('client-filter').value);
+})();
+</script>
+{% endblock %}

@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import preset_views
+from . import geology_views
 
 app_name = 'core'
 
@@ -68,4 +69,14 @@ urlpatterns = [
     path('presets/additional-charge/<int:pk>/edit/', preset_views.additional_charge_preset_edit, name='additional_charge_preset_edit'),
     path('presets/additional-charge/<int:pk>/submit/', preset_views.additional_charge_preset_submit, name='additional_charge_preset_submit'),
     path('presets/additional-charge/<int:pk>/approve/', preset_views.additional_charge_preset_approve, name='additional_charge_preset_approve'),
+
+    # ── Geology / Lithology ─────────────────────────────────────────────────────
+    path('geology/holes/', geology_views.drill_hole_list, name='drill_hole_list'),
+    path('geology/holes/create/', geology_views.drill_hole_create, name='drill_hole_create'),
+    path('geology/holes/<int:pk>/', geology_views.drill_hole_detail, name='drill_hole_detail'),
+    path('geology/holes/<int:pk>/edit/', geology_views.drill_hole_edit, name='drill_hole_edit'),
+    path('geology/holes/<int:pk>/delete/', geology_views.drill_hole_delete, name='drill_hole_delete'),
+    path('geology/map/', geology_views.geology_map, name='geology_map'),
+    path('geology/map/data/', geology_views.geology_map_data, name='geology_map_data'),
+    path('geology/cross-section/', geology_views.cross_section, name='cross_section'),
 ]

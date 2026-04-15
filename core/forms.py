@@ -2,7 +2,8 @@ from django import forms
 from django.forms import inlineformset_factory
 from .models import (
     BOQReport, BOQAdditionalCharge, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, Survey, Casing, 
-    WorkspaceMembership, Workspace, DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset
+    WorkspaceMembership, Workspace, DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset,
+    DrillHole, LithologyInterval,
 )
 
 
@@ -353,4 +354,46 @@ CasingFormSet = inlineformset_factory(
     DrillShift, Casing,
     form=CasingForm,
     extra=1, can_delete=True
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Geology Forms
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DrillHoleForm(forms.ModelForm):
+    class Meta:
+        model = DrillHole
+        fields = [
+            'hole_id', 'client', 'project_name', 'location_description',
+            'latitude', 'longitude', 'elevation',
+            'easting', 'northing',
+            'total_depth', 'dip', 'azimuth',
+            'drilled_date', 'notes',
+        ]
+        widgets = {
+            'drilled_date': forms.DateInput(attrs={'type': 'date'}),
+            'notes': forms.Textarea(attrs={'rows': 3}),
+            'location_description': forms.TextInput(attrs={'placeholder': 'e.g. Northern paddock, 200 m east of bore BH-001'}),
+        }
+
+
+class LithologyIntervalForm(forms.ModelForm):
+    class Meta:
+        model = LithologyInterval
+        fields = [
+            'depth_from', 'depth_to', 'lithology_code', 'description',
+            'colour', 'hardness', 'weathering', 'recovery_pct', 'notes',
+        ]
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Rock description…'}),
+            'notes': forms.Textarea(attrs={'rows': 1}),
+            'colour': forms.TextInput(attrs={'type': 'color'}),
+        }
+
+
+LithologyIntervalFormSet = inlineformset_factory(
+    DrillHole, LithologyInterval,
+    form=LithologyIntervalForm,
+    extra=1, can_delete=True,
 )

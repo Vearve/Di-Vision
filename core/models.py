@@ -1174,3 +1174,207 @@ class AdditionalChargePreset(models.Model):
     def effective_rate(self):
         """Return the rate with correct sign based on charge type."""
         return self.rate if self.charge_type == self.CHARGE_TYPE_CHARGE else -abs(self.rate)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Geology / Lithology Models
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DrillHole(models.Model):
+    """
+    Represents a single drill hole with its collar location and metadata.
+
+    Each hole can have many depth-interval lithology logs attached to it.
+    Coordinates are stored as WGS-84 decimal degrees (latitude/longitude) for
+    Leaflet map display, with optional easting/northing for local grid systems.
+    """
+    hole_id = models.CharField(max_length=50, unique=True, help_text="Unique hole identifier, e.g. BH-001")
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.PROTECT,
+        related_name='drill_holes',
+        null=True, blank=True,
+    )
+    project_name = models.CharField(max_length=255, blank=True, help_text="Project or site name")
+    location_description = models.CharField(max_length=255, blank=True, help_text="Human-readable location description")
+
+    # GPS / WGS-84 coordinates for Leaflet map
+    latitude = models.DecimalField(
+        max_digits=10, decimal_places=7,
+        null=True, blank=True,
+        help_text="Decimal degrees (WGS-84)",
+    )
+    longitude = models.DecimalField(
+        max_digits=10, decimal_places=7,
+        null=True, blank=True,
+        help_text="Decimal degrees (WGS-84)",
+    )
+
+    # Optional local grid coordinates
+    easting = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text="Local grid easting (m)")
+    northing = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text="Local grid northing (m)")
+    elevation = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text="Collar elevation above sea level (m)")
+
+    # Hole geometry
+    total_depth = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text="Total drilled depth (m)")
+    dip = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="Hole dip angle (degrees, negative = downward)")
+    azimuth = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text="Hole azimuth (degrees, 0–360)")
+
+    drilled_date = models.DateField(null=True, blank=True, help_text="Date drilling commenced")
+    notes = models.TextField(blank=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='drill_holes',
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['hole_id']
+        indexes = [
+            models.Index(fields=['client']),
+        ]
+
+    def __str__(self):
+        return self.hole_id
+
+    def get_max_logged_depth(self):
+        """Return the deepest logged depth from lithology intervals."""
+        agg = self.lithology_intervals.aggregate(max_depth=models.Max('depth_to'))
+        return agg['max_depth'] or 0
+
+    def has_coordinates(self):
+        return self.latitude is not None and self.longitude is not None
+
+
+class LithologyInterval(models.Model):
+    """
+    A single depth interval within a drill hole describing the rock type (lithology).
+
+    Multiple intervals together form the complete lithology log / strip log for a hole.
+    """
+    LITHOLOGY_CHOICES = [
+        ('topsoil', 'Topsoil'),
+        ('clay', 'Clay'),
+        ('sandy_clay', 'Sandy Clay'),
+        ('sand', 'Sand'),
+        ('gravel', 'Gravel'),
+        ('sandstone', 'Sandstone'),
+        ('siltstone', 'Siltstone'),
+        ('shale', 'Shale'),
+        ('mudstone', 'Mudstone'),
+        ('limestone', 'Limestone'),
+        ('dolomite', 'Dolomite'),
+        ('marble', 'Marble'),
+        ('quartzite', 'Quartzite'),
+        ('granite', 'Granite'),
+        ('granodiorite', 'Granodiorite'),
+        ('diorite', 'Diorite'),
+        ('gabbro', 'Gabbro'),
+        ('basalt', 'Basalt'),
+        ('andesite', 'Andesite'),
+        ('rhyolite', 'Rhyolite'),
+        ('schist', 'Schist'),
+        ('gneiss', 'Gneiss'),
+        ('pegmatite', 'Pegmatite'),
+        ('breccia', 'Breccia'),
+        ('conglomerate', 'Conglomerate'),
+        ('coal', 'Coal'),
+        ('ironstone', 'Ironstone'),
+        ('calcrete', 'Calcrete'),
+        ('ferricrete', 'Ferricrete'),
+        ('weathered_rock', 'Weathered Rock'),
+        ('other', 'Other'),
+    ]
+
+    # Standard geological colour codes used on strip logs
+    LITHOLOGY_COLORS = {
+        'topsoil': '#8B4513',
+        'clay': '#DEB887',
+        'sandy_clay': '#D2B48C',
+        'sand': '#F5DEB3',
+        'gravel': '#A9A9A9',
+        'sandstone': '#F4A460',
+        'siltstone': '#BC8F5F',
+        'shale': '#708090',
+        'mudstone': '#808080',
+        'limestone': '#FFFACD',
+        'dolomite': '#E6E6FA',
+        'marble': '#F0F0F0',
+        'quartzite': '#E0FFFF',
+        'granite': '#FFC0CB',
+        'granodiorite': '#FFB6C1',
+        'diorite': '#D8BFD8',
+        'gabbro': '#2F4F4F',
+        'basalt': '#36454F',
+        'andesite': '#778899',
+        'rhyolite': '#DB7093',
+        'schist': '#9ACD32',
+        'gneiss': '#6B8E23',
+        'pegmatite': '#FF69B4',
+        'breccia': '#CD853F',
+        'conglomerate': '#8B6914',
+        'coal': '#1C1C1C',
+        'ironstone': '#8B0000',
+        'calcrete': '#FFF8DC',
+        'ferricrete': '#B22222',
+        'weathered_rock': '#BDB76B',
+        'other': '#C0C0C0',
+    }
+
+    drill_hole = models.ForeignKey(DrillHole, on_delete=models.CASCADE, related_name='lithology_intervals')
+    depth_from = models.DecimalField(max_digits=8, decimal_places=2, help_text="Start depth (m)")
+    depth_to = models.DecimalField(max_digits=8, decimal_places=2, help_text="End depth (m)")
+    lithology_code = models.CharField(max_length=30, choices=LITHOLOGY_CHOICES, default='other')
+    description = models.TextField(blank=True, help_text="Detailed description of the rock / material")
+    colour = models.CharField(max_length=7, blank=True, help_text="Hex colour override, e.g. #FF0000")
+    hardness = models.CharField(
+        max_length=20,
+        blank=True,
+        choices=[
+            ('very_soft', 'Very Soft'),
+            ('soft', 'Soft'),
+            ('medium', 'Medium'),
+            ('hard', 'Hard'),
+            ('very_hard', 'Very Hard'),
+        ],
+        help_text="Rock hardness",
+    )
+    weathering = models.CharField(
+        max_length=20,
+        blank=True,
+        choices=[
+            ('fresh', 'Fresh'),
+            ('slightly_weathered', 'Slightly Weathered'),
+            ('moderately_weathered', 'Moderately Weathered'),
+            ('highly_weathered', 'Highly Weathered'),
+            ('completely_weathered', 'Completely Weathered'),
+        ],
+        help_text="Degree of weathering",
+    )
+    recovery_pct = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        null=True, blank=True,
+        help_text="Core recovery percentage for this interval",
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['depth_from']
+        unique_together = [('drill_hole', 'depth_from', 'depth_to')]
+
+    def __str__(self):
+        return f"{self.drill_hole.hole_id}: {self.depth_from}–{self.depth_to}m ({self.get_lithology_code_display()})"
+
+    @property
+    def interval_length(self):
+        return float(self.depth_to) - float(self.depth_from)
+
+    @property
+    def display_colour(self):
+        """Return the colour to use in the strip log (custom override or default)."""
+        if self.colour:
+            return self.colour
+        return self.LITHOLOGY_COLORS.get(self.lithology_code, '#C0C0C0')

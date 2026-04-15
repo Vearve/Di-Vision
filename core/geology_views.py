@@ -11,6 +11,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from .forms import DrillHoleForm, LithologyIntervalFormSet
@@ -179,7 +180,7 @@ def geology_map_data(request):
                 'elevation': float(hole.elevation) if hole.elevation else None,
                 'top_litho': top_litho,
                 'marker_colour': marker_colour,
-                'detail_url': f'/geology/holes/{hole.pk}/',
+                'detail_url': reverse('core:drill_hole_detail', kwargs={'pk': hole.pk}),
             },
         })
 
@@ -240,10 +241,21 @@ def cross_section(request):
                 'max_depth': max_depth,
             })
 
+    # Build depth axis ticks: 11 evenly-spaced labels (0 %, 10 %, …, 100 %)
+    if section_data:
+        axis_max = section_data[0]['max_depth']
+        depth_axis_ticks = [
+            {'pct': pct, 'depth': round((pct / 100) * axis_max, 1)}
+            for pct in range(0, 101, 10)
+        ]
+    else:
+        depth_axis_ticks = []
+
     return render(request, 'core/cross_section.html', {
         'all_holes': all_holes,
         'selected_holes': selected_holes,
         'selected_ids': selected_ids,
         'section_data': section_data,
         'hole_ids_raw': hole_ids_raw,
+        'depth_axis_ticks': depth_axis_ticks,
     })

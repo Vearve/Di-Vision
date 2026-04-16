@@ -1,0 +1,125 @@
+{% extends 'core/base.html' %}
+{% block title %}Survey Stations – {{ hole.hole_id }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-activity me-2"></i>Survey Stations: {{ hole.hole_id }}</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:drill_hole_detail' hole.pk %}">{{ hole.hole_id }}</a></li>
+        <li class="breadcrumb-item active">Survey Stations</li>
+      </ol></nav>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'core:drill_hole_path_3d' hole.pk %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-bezier2 me-1"></i>3D Path
+      </a>
+      <a href="{% url 'core:drill_hole_detail' hole.pk %}" class="btn btn-outline-secondary btn-sm">Back</a>
+    </div>
+  </div>
+
+  <div class="alert alert-info small">
+    Add measured-depth survey stations to generate curved trajectories. If empty, the system falls back to a straight path from hole dip/azimuth.
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Stations</h5>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
+          <i class="bi bi-plus-lg me-1"></i>Add Row
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0" id="stations-table">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3">Measured Depth (m)</th>
+                <th>Dip (deg)</th>
+                <th>Azimuth (deg)</th>
+                <th style="width: 110px;">Delete</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for form in formset %}
+              <tr>
+                {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+                <td class="ps-3">{{ form.measured_depth }}</td>
+                <td>{{ form.dip }}</td>
+                <td>{{ form.azimuth }}</td>
+                <td>
+                  {% if form.instance.pk %}
+                  <div class="form-check">{{ form.DELETE }} <label class="form-check-label small text-danger">Delete</label></div>
+                  {% else %}
+                  <button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Survey</button>
+      <a href="{% url 'core:drill_hole_path_3d' hole.pk %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  const tableBody = document.querySelector('#stations-table tbody');
+  const totalForms = document.getElementById('id_drillholesurveystation_set-TOTAL_FORMS');
+
+  document.querySelectorAll('input[type="number"], input[type="text"]').forEach((el) => {
+    if (!el.classList.contains('form-check-input')) {
+      el.classList.add('form-control', 'form-control-sm');
+    }
+  });
+
+  document.getElementById('add-row').addEventListener('click', function () {
+    const rows = tableBody.querySelectorAll('tr');
+    const idx = parseInt(totalForms.value, 10);
+    const clone = rows[rows.length - 1].cloneNode(true);
+
+    clone.innerHTML = clone.innerHTML.replace(/-(\d+)-/g, `-${idx}-`);
+
+    clone.querySelectorAll('input').forEach((el) => {
+      if (el.type === 'checkbox') {
+        el.checked = false;
+      } else {
+        el.value = '';
+      }
+    });
+
+    const deleteCell = clone.querySelector('td:last-child');
+    deleteCell.innerHTML = '<button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button>';
+
+    tableBody.appendChild(clone);
+    totalForms.value = idx + 1;
+  });
+
+  tableBody.addEventListener('click', function (event) {
+    if (!event.target.closest('.remove-row')) {
+      return;
+    }
+
+    event.target.closest('tr').remove();
+    const rows = tableBody.querySelectorAll('tr');
+    rows.forEach((row, index) => {
+      row.innerHTML = row.innerHTML.replace(/-\d+-/g, `-${index}-`);
+    });
+    totalForms.value = rows.length;
+  });
+})();
+</script>
+{% endblock %}

@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+import math
 
 
 class Workspace(models.Model):
@@ -1247,6 +1248,176 @@ class DrillHole(models.Model):
 
     def has_coordinates(self):
         return self.latitude is not None and self.longitude is not None
+
+    def _build_path_stations(self):
+        """
+        Return ordered survey stations for trajectory calculations.
+
+        If no explicit survey stations exist, fallback to a straight hole using
+        the hole-level dip/azimuth and total_depth metadata.
+        """
+        stations = list(self.survey_stations.order_by('measured_depth'))
+        if stations:
+            return stations
+
+        if self.total_depth is None or self.dip is None or self.azimuth is None:
+            return []
+
+        return [
+            DrillHoleSurveyStation(drill_hole=self, measured_depth=Decimal('0.00'), dip=self.dip, azimuth=self.azimuth),
+            DrillHoleSurveyStation(drill_hole=self, measured_depth=self.total_depth, dip=self.dip, azimuth=self.azimuth),
+        ]
+
+    def calculate_path_points(self):
+        """
+        Calculate 3D trajectory points using minimum-curvature interpolation.
+
+        Coordinates are returned in meters:
+        - x: easting axis
+        - y: northing axis
+        - z: elevation axis (positive up)
+        """
+        stations = self._build_path_stations()
+        if len(stations) < 2:
+            return []
+
+        collar_x = float(self.easting or 0)
+        collar_y = float(self.northing or 0)
+        collar_z = float(self.elevation or 0)
+
+        def direction_vector(dip_deg, azimuth_deg):
+            dip_rad = math.radians(float(dip_deg))
+            azi_rad = math.radians(float(azimuth_deg))
+            north = math.cos(dip_rad) * math.cos(azi_rad)
+            east = math.cos(dip_rad) * math.sin(azi_rad)
+            down = -math.sin(dip_rad)
+            return (north, east, down)
+
+        points = [{
+            'measured_depth': float(stations[0].measured_depth),
+            'x': collar_x,
+            'y': collar_y,
+            'z': collar_z,
+            'tvd': 0.0,
+        }]
+
+        northing = 0.0
+        easting = 0.0
+        tvd = 0.0
+
+        for i in range(1, len(stations)):
+            s1 = stations[i - 1]
+            s2 = stations[i]
+
+            md1 = float(s1.measured_depth)
+            md2 = float(s2.measured_depth)
+            delta_md = max(md2 - md1, 0.0)
+            if delta_md <= 0:
+                continue
+
+            n1, e1, d1 = direction_vector(s1.dip, s1.azimuth)
+            n2, e2, d2 = direction_vector(s2.dip, s2.azimuth)
+
+            dot = max(min((n1 * n2) + (e1 * e2) + (d1 * d2), 1.0), -1.0)
+            dogleg = math.acos(dot)
+            if dogleg > 1e-12:
+                ratio_factor = (2.0 / dogleg) * math.tan(dogleg / 2.0)
+            else:
+                ratio_factor = 1.0
+
+            delta_n = (delta_md / 2.0) * (n1 + n2) * ratio_factor
+            delta_e = (delta_md / 2.0) * (e1 + e2) * ratio_factor
+            delta_d = (delta_md / 2.0) * (d1 + d2) * ratio_factor
+
+            northing += delta_n
+            easting += delta_e
+            tvd += delta_d
+
+            points.append({
+                'measured_depth': md2,
+                'x': collar_x + easting,
+                'y': collar_y + northing,
+                'z': collar_z - tvd,
+                'tvd': tvd,
+            })
+
+        return points
+
+    def get_survey_quality_warnings(self):
+        """Return human-readable quality checks for survey path inputs."""
+        warnings = []
+        stations = list(self.survey_stations.order_by('measured_depth'))
+
+        if not stations:
+            if self.total_depth and self.dip is not None and self.azimuth is not None:
+                warnings.append('No survey stations recorded. Path is currently using a straight-line fallback from hole dip/azimuth.')
+            else:
+                warnings.append('No survey stations recorded and no fallback geometry configured (total depth, dip, azimuth).')
+            return warnings
+
+        if len(stations) < 2:
+            warnings.append('Only one survey station present. Add at least two stations for a valid curved path.')
+            return warnings
+
+        first_md = float(stations[0].measured_depth)
+        if abs(first_md) > 0.01:
+            warnings.append(f'First station starts at {first_md:.2f} m, not 0 m. Collar reference may be offset.')
+
+        for i in range(1, len(stations)):
+            prev = stations[i - 1]
+            curr = stations[i]
+            md1 = float(prev.measured_depth)
+            md2 = float(curr.measured_depth)
+            delta_md = md2 - md1
+
+            if delta_md > 60:
+                warnings.append(
+                    f'Large measured-depth gap between {md1:.2f} m and {md2:.2f} m ({delta_md:.2f} m). Consider adding intermediate stations.'
+                )
+
+            dip1 = math.radians(float(prev.dip))
+            dip2 = math.radians(float(curr.dip))
+            az1 = math.radians(float(prev.azimuth))
+            az2 = math.radians(float(curr.azimuth))
+
+            n1 = math.cos(dip1) * math.cos(az1)
+            e1 = math.cos(dip1) * math.sin(az1)
+            d1 = -math.sin(dip1)
+            n2 = math.cos(dip2) * math.cos(az2)
+            e2 = math.cos(dip2) * math.sin(az2)
+            d2 = -math.sin(dip2)
+
+            dot = max(min((n1 * n2) + (e1 * e2) + (d1 * d2), 1.0), -1.0)
+            dogleg_deg = math.degrees(math.acos(dot))
+            if delta_md > 0:
+                dls = (dogleg_deg / delta_md) * 30.0
+                if dls > 6.0:
+                    warnings.append(
+                        f'High dogleg severity ({dls:.2f} deg/30m) between {md1:.2f} m and {md2:.2f} m.'
+                    )
+
+        return warnings
+
+
+class DrillHoleSurveyStation(models.Model):
+    """Survey station used for 3D borehole trajectory calculations."""
+
+    drill_hole = models.ForeignKey(
+        DrillHole,
+        on_delete=models.CASCADE,
+        related_name='survey_stations',
+    )
+    measured_depth = models.DecimalField(max_digits=8, decimal_places=2, help_text='Measured depth at station (m)')
+    dip = models.DecimalField(max_digits=5, decimal_places=2, help_text='Dip angle (degrees, negative = downward)')
+    azimuth = models.DecimalField(max_digits=6, decimal_places=2, help_text='Azimuth (degrees, 0-360)')
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['measured_depth']
+        unique_together = [('drill_hole', 'measured_depth')]
+
+    def __str__(self):
+        return f"{self.drill_hole.hole_id} @ {self.measured_depth}m"
 
 
 class LithologyInterval(models.Model):

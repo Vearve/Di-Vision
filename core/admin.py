@@ -9,7 +9,7 @@ from .models import (
     BOQReport, BOQLineItem, Client, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, 
     ApprovalHistory, Survey, Casing, Workspace, WorkspaceMembership,
     DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset,
-    DrillHole, LithologyInterval,
+    DrillHole, LithologyInterval, DrillHoleSurveyStation,
 )
 
 # Customize admin site
@@ -387,13 +387,20 @@ class LithologyIntervalInline(admin.TabularInline):
     ordering = ('depth_from',)
 
 
+class DrillHoleSurveyStationInline(admin.TabularInline):
+    model = DrillHoleSurveyStation
+    extra = 1
+    fields = ('measured_depth', 'dip', 'azimuth')
+    ordering = ('measured_depth',)
+
+
 @admin.register(DrillHole)
 class DrillHoleAdmin(admin.ModelAdmin):
     list_display = ('hole_id', 'client', 'project_name', 'latitude', 'longitude', 'total_depth', 'drilled_date', 'created_by', 'created_at')
     list_filter = ('client', 'drilled_date')
     search_fields = ('hole_id', 'project_name', 'location_description')
     readonly_fields = ('created_at', 'updated_at')
-    inlines = [LithologyIntervalInline]
+    inlines = [LithologyIntervalInline, DrillHoleSurveyStationInline]
     fieldsets = (
         ('Hole Identification', {
             'fields': ('hole_id', 'client', 'project_name', 'location_description', 'drilled_date')
@@ -424,3 +431,11 @@ class LithologyIntervalAdmin(admin.ModelAdmin):
     list_filter = ('lithology_code', 'hardness', 'weathering', 'drill_hole__client')
     search_fields = ('drill_hole__hole_id', 'description')
     ordering = ('drill_hole__hole_id', 'depth_from')
+
+
+@admin.register(DrillHoleSurveyStation)
+class DrillHoleSurveyStationAdmin(admin.ModelAdmin):
+    list_display = ('drill_hole', 'measured_depth', 'dip', 'azimuth', 'created_at')
+    list_filter = ('drill_hole__client',)
+    search_fields = ('drill_hole__hole_id',)
+    ordering = ('drill_hole__hole_id', 'measured_depth')

@@ -1,0 +1,212 @@
+{% extends 'core/base.html' %}
+{% block title %}3D Path Comparison{% endblock %}
+{% block extra_css %}
+<style>
+  #compare-plot { height: 70vh; min-height: 460px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>3D Path Comparison</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item active">3D Comparison</li>
+      </ol></nav>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header"><h5 class="mb-0">Filter Holes</h5></div>
+    <div class="card-body">
+      <form method="get" id="filter-form" class="row g-3">
+        <div class="col-md-4">
+          <label for="client-select" class="form-label">Client</label>
+          <select id="client-select" name="client_id" class="form-select form-select-sm">
+            <option value="">-- All Clients --</option>
+            {% for client in clients %}
+            <option value="{{ client.pk }}" {% if client.pk|stringformat:"s" == filter_client_id %}selected{% endif %}>
+              {{ client.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="project-search" class="form-label">Project</label>
+          <input type="text" id="project-search" name="project" class="form-control form-control-sm" 
+                 placeholder="Search project..." value="{{ filter_project }}">
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+          <button type="submit" class="btn btn-sm btn-secondary">
+            <i class="bi bi-funnel me-1"></i>Apply Filter
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header"><h5 class="mb-0">Select Holes</h5></div>
+    <div class="card-body">
+      <form method="get" id="compare-form">
+        <input type="hidden" name="client_id" value="{{ filter_client_id }}">
+        <input type="hidden" name="project" value="{{ filter_project }}">
+        <div class="row g-2 mb-3">
+          {% for hole in all_holes %}
+          <div class="col-auto">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input hole-checkbox" type="checkbox" name="hole_pk"
+                     value="{{ hole.pk }}" id="hole-chk-{{ hole.pk }}"
+                     {% if hole.pk in selected_ids %}checked{% endif %}>
+              <label class="form-check-label" for="hole-chk-{{ hole.pk }}">
+                <strong>{{ hole.hole_id }}</strong>
+                {% if hole.client %}<span class="text-muted small">({{ hole.client }})</span>{% endif %}
+              </label>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="holes" id="holes-hidden" value="{{ hole_ids_raw }}">
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-bezier2 me-1"></i>Draw 3D Comparison
+          </button>
+          {% if selected_holes %}
+          <button type="button" class="btn btn-info btn-sm" id="export-btn">
+            <i class="bi bi-download me-1"></i>Export HTML
+          </button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <div id="compare-plot"></div>
+      {% if not selected_holes %}
+      <div class="alert alert-info mt-3 mb-0">Select one or more holes and click Draw 3D Comparison.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if warning_rows %}
+  <div class="row g-3">
+    {% for row in warning_rows %}
+    <div class="col-md-6 col-lg-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>{{ row.hole.hole_id }}</strong>
+          <a href="{% url 'core:drill_hole_path_3d' row.hole.pk %}" class="btn btn-sm btn-outline-secondary">Open</a>
+        </div>
+        <div class="card-body">
+          {% if row.warnings %}
+            <ul class="small mb-0">
+              {% for warning in row.warnings %}
+              <li>{{ warning }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-success mb-0 small">No survey quality warnings.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{{ traces_json|json_script:"traces-json" }}
+<script>
+(function () {
+  const tracesPayload = JSON.parse(document.getElementById('traces-json').textContent);
+
+  // Handle filter form submission - preserve current hole selections
+  document.getElementById('filter-form').addEventListener('submit', function (e) {
+    const selected = Array.from(document.querySelectorAll('.hole-checkbox:checked')).map((el) => el.value);
+    const clientId = document.getElementById('client-select').value;
+    const project = document.getElementById('project-search').value;
+    
+    let query = '';
+    if (clientId) query += `&client_id=${encodeURIComponent(clientId)}`;
+    if (project) query += `&project=${encodeURIComponent(project)}`;
+    if (selected.length > 0) query += `&holes=${selected.join(',')}`;
+    
+    window.location.href = window.location.pathname + '?' + query.substring(1);
+    e.preventDefault();
+  });
+
+  document.getElementById('compare-form').addEventListener('submit', function () {
+    const selected = Array.from(document.querySelectorAll('.hole-checkbox:checked')).map((el) => el.value);
+    document.getElementById('holes-hidden').value = selected.join(',');
+  });
+
+  // Handle export button
+  const exportBtn = document.getElementById('export-btn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', function () {
+      const selected = Array.from(document.querySelectorAll('.hole-checkbox:checked')).map((el) => el.value);
+      if (selected.length === 0) {
+        alert('Please select at least one hole to export.');
+        return;
+      }
+      const clientId = document.getElementById('client-select').value;
+      const project = document.getElementById('project-search').value;
+      const params = new URLSearchParams({ holes: selected.join(',') });
+      if (clientId) {
+        params.set('client_id', clientId);
+      }
+      if (project) {
+        params.set('project', project);
+      }
+      const exportUrl = `{% url 'core:drill_hole_paths_3d_export' %}?${params.toString()}`;
+      window.location.href = exportUrl;
+    });
+  }
+
+  function renderComparePlot(payload) {
+    if (!payload || payload.length === 0) {
+      Plotly.newPlot('compare-plot', [], {
+        title: 'No trajectory data available for selected holes',
+        paper_bgcolor: '#ffffff',
+      }, {responsive: true});
+      return;
+    }
+
+    const traces = payload.map((item, idx) => ({
+      x: item.x,
+      y: item.y,
+      z: item.z,
+      text: item.md,
+      type: 'scatter3d',
+      mode: 'lines',
+      line: {
+        width: 7,
+      },
+      name: item.hole_id,
+      hovertemplate: `${item.hole_id}<br>MD: %{text} m<br>X: %{x:.2f}<br>Y: %{y:.2f}<br>Z: %{z:.2f}<extra></extra>`,
+    }));
+
+    Plotly.newPlot('compare-plot', traces, {
+      margin: { l: 0, r: 0, t: 40, b: 0 },
+      title: 'Multi-hole 3D Trajectory Comparison',
+      paper_bgcolor: '#ffffff',
+      scene: {
+        xaxis: { title: 'Easting (m)' },
+        yaxis: { title: 'Northing (m)' },
+        zaxis: { title: 'Elevation (m)' },
+        aspectmode: 'data',
+      },
+      legend: { orientation: 'h' },
+    }, {responsive: true, displaylogo: false});
+  }
+
+  renderComparePlot(tracesPayload);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,172 @@
+{% extends 'core/base.html' %}
+{% block title %}3D Path – {{ hole.hole_id }}{% endblock %}
+{% block extra_css %}
+<style>
+  #path-plot { height: 68vh; min-height: 420px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-bezier2 me-2"></i>3D Hole Path: {{ hole.hole_id }}</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:drill_hole_detail' hole.pk %}">{{ hole.hole_id }}</a></li>
+        <li class="breadcrumb-item active">3D Path</li>
+      </ol></nav>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'core:drill_hole_paths_3d' %}?holes={{ hole.pk }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-diagram-3 me-1"></i>Compare Holes
+      </a>
+      <a href="{% url 'core:drill_hole_survey_edit' hole.pk %}" class="btn btn-sm btn-outline-primary">
+        <i class="bi bi-activity me-1"></i>Edit Survey Stations
+      </a>
+      <a href="{% url 'core:drill_hole_detail' hole.pk %}" class="btn btn-sm btn-outline-secondary">Back</a>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm"><div class="card-body">
+        <h6 class="text-muted mb-1">Client</h6>
+        <p class="mb-0">{{ hole.client|default:'—' }}</p>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm"><div class="card-body">
+        <h6 class="text-muted mb-1">Total Depth</h6>
+        <p class="mb-0">{{ hole.total_depth|default:'—' }} m</p>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm"><div class="card-body">
+        <h6 class="text-muted mb-1">Survey Stations</h6>
+        <p class="mb-0">{{ stations.count }}</p>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm"><div class="card-body">
+        <h6 class="text-muted mb-1">Path Points</h6>
+        <p class="mb-0" id="point-count">{{ path_points|length }}</p>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <div id="path-plot"></div>
+      {% if not path_points %}
+      <div class="alert alert-warning mt-3 mb-0">
+        Not enough directional data to draw a path. Set hole dip/azimuth + total depth, or add at least 2 survey stations.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if survey_warnings %}
+  <div class="alert alert-warning">
+    <h6 class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Survey Quality Warnings</h6>
+    <ul class="mb-0">
+      {% for warning in survey_warnings %}
+      <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if stations %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-header"><h6 class="mb-0">Survey Stations</h6></div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light"><tr><th>Measured Depth (m)</th><th>Dip (deg)</th><th>Azimuth (deg)</th></tr></thead>
+          <tbody>
+            {% for station in stations %}
+            <tr>
+              <td>{{ station.measured_depth }}</td>
+              <td>{{ station.dip }}</td>
+              <td>{{ station.azimuth }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+(function () {
+  const endpoint = '{% url "core:drill_hole_path_data" hole.pk %}';
+
+  function renderPlot(points) {
+    if (!points || points.length === 0) {
+      Plotly.newPlot('path-plot', [], {
+        title: 'No path data',
+        paper_bgcolor: '#ffffff',
+        plot_bgcolor: '#ffffff'
+      }, {responsive: true});
+      return;
+    }
+
+    const x = points.map((p) => p.x);
+    const y = points.map((p) => p.y);
+    const z = points.map((p) => p.z);
+    const md = points.map((p) => p.measured_depth);
+
+    const trace = {
+      x,
+      y,
+      z,
+      type: 'scatter3d',
+      mode: 'lines+markers',
+      line: {
+        width: 7,
+        color: md,
+        colorscale: 'Turbo',
+        colorbar: { title: 'Measured Depth (m)' }
+      },
+      marker: {
+        size: 4,
+        color: '#143f6b'
+      },
+      hovertemplate: 'MD: %{text} m<br>X: %{x:.2f}<br>Y: %{y:.2f}<br>Z: %{z:.2f}<extra></extra>',
+      text: md,
+      name: '{{ hole.hole_id|escapejs }}'
+    };
+
+    const layout = {
+      margin: { l: 0, r: 0, t: 30, b: 0 },
+      paper_bgcolor: '#ffffff',
+      scene: {
+        xaxis: { title: 'Easting (m)' },
+        yaxis: { title: 'Northing (m)' },
+        zaxis: { title: 'Elevation (m)' },
+        aspectmode: 'data',
+        camera: { eye: { x: 1.7, y: 1.7, z: 1.2 } }
+      },
+      title: '{{ hole.hole_id|escapejs }} Trajectory'
+    };
+
+    Plotly.newPlot('path-plot', [trace], layout, {responsive: true, displaylogo: false});
+  }
+
+  fetch(endpoint)
+    .then((response) => response.json())
+    .then((payload) => {
+      document.getElementById('point-count').textContent = payload.points.length;
+      renderPlot(payload.points);
+    })
+    .catch(() => {
+      Plotly.newPlot('path-plot', [], { title: 'Failed to load path data' }, {responsive: true});
+    });
+})();
+</script>
+{% endblock %}

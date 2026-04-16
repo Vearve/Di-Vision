@@ -3,7 +3,7 @@ from django.forms import inlineformset_factory
 from .models import (
     BOQReport, BOQAdditionalCharge, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, Survey, Casing, 
     WorkspaceMembership, Workspace, DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset,
-    DrillHole, LithologyInterval,
+    DrillHole, LithologyInterval, DrillHoleSurveyStation,
 )
 
 
@@ -396,4 +396,19 @@ LithologyIntervalFormSet = inlineformset_factory(
     DrillHole, LithologyInterval,
     form=LithologyIntervalForm,
     extra=1, can_delete=True,
+)
+
+
+class DrillHoleSurveyStationForm(forms.ModelForm):
+    class Meta:
+        model = DrillHoleSurveyStation
+        fields = ['measured_depth', 'dip', 'azimuth']
+
+
+DrillHoleSurveyStationFormSet = inlineformset_factory(
+    DrillHole,
+    DrillHoleSurveyStation,
+    form=DrillHoleSurveyStationForm,
+    extra=1,
+    can_delete=True,
 )

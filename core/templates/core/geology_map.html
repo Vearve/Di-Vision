@@ -47,6 +47,12 @@
     <div class="col-auto">
       <span class="badge bg-secondary align-middle" id="hole-count">Loading…</span>
     </div>
+    <div class="col-auto">
+      <span class="badge bg-light text-dark border align-middle" id="last-refresh">Updated: --</span>
+    </div>
+    <div class="col-auto">
+      <span class="badge bg-warning text-dark border align-middle" id="live-status">Live: connecting…</span>
+    </div>
   </div>
 
   <div id="geology-map"></div>
@@ -84,6 +90,9 @@
 
   let markers = [];
   let allFeatures = [];
+  let socket = null;
+  let reconnectTimer = null;
+  let fallbackTimer = null;
 
   function makeIcon(colour) {
     return L.divIcon({
@@ -158,6 +167,7 @@
       .then(geojson => {
         allFeatures = geojson.features || [];
         renderMarkers(allFeatures);
+        document.getElementById('last-refresh').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
       })
       .catch(() => {
         document.getElementById('holes-tbody').innerHTML =
@@ -169,7 +179,62 @@
     loadData(this.value);
   });
 
-  loadData(document.getElementById('client-filter').value);
+  const selectedClient = document.getElementById('client-filter').value;
+  loadData(selectedClient);
+
+  function setLiveStatus(text, badgeClass) {
+    const el = document.getElementById('live-status');
+    el.textContent = text;
+    el.className = `badge ${badgeClass} border align-middle`;
+  }
+
+  function ensureFallbackPolling() {
+    if (fallbackTimer) return;
+    fallbackTimer = setInterval(() => {
+      loadData(document.getElementById('client-filter').value);
+    }, 20000);
+  }
+
+  function clearFallbackPolling() {
+    if (!fallbackTimer) return;
+    clearInterval(fallbackTimer);
+    fallbackTimer = null;
+  }
+
+  function connectWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    socket = new WebSocket(`${protocol}://${window.location.host}/ws/geology/map/`);
+
+    socket.onopen = function () {
+      setLiveStatus('Live: connected', 'bg-success text-white');
+      clearFallbackPolling();
+    };
+
+    socket.onmessage = function (event) {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'refresh') {
+          loadData(document.getElementById('client-filter').value);
+        }
+      } catch (err) {
+        // Ignore malformed payloads and retain current state.
+      }
+    };
+
+    socket.onclose = function () {
+      setLiveStatus('Live: reconnecting…', 'bg-warning text-dark');
+      ensureFallbackPolling();
+      reconnectTimer = setTimeout(connectWebSocket, 3000);
+    };
+
+    socket.onerror = function () {
+      setLiveStatus('Live: fallback polling', 'bg-secondary text-white');
+      ensureFallbackPolling();
+      socket.close();
+    };
+  }
+
+  connectWebSocket();
 })();
 </script>
 {% endblock %}

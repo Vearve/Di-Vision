@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     # Project apps
     'core',
     'accounts',
@@ -97,6 +98,9 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'DailyDrillReport.urls'
+ASGI_APPLICATION = 'DailyDrillReport.asgi.application'
+
+REDIS_URL = config('REDIS_URL', default='').strip()
 
 TEMPLATES = [
     {
@@ -115,6 +119,22 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'DailyDrillReport.wsgi.application'
+
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_URL],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 
 # Database

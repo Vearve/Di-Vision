@@ -54,7 +54,10 @@ DEBUG=False
 ALLOWED_HOSTS=your-app-name.onrender.com
 DB_ENGINE=django.db.backends.postgresql
 DATABASE_URL=<paste-internal-database-url-from-step-3>
+REDIS_URL=redis://red-xxxxx:6379/0
 ```
+
+`REDIS_URL` is optional for single-instance development, but recommended in production if you want WebSocket updates to work reliably across restarts or multiple app instances. On Render, create a Redis service and copy its internal connection string here.
 
 **Generate a secure SECRET_KEY:**
 ```python

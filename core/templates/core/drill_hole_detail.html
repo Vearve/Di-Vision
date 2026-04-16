@@ -26,6 +26,12 @@
       <a href="{% url 'core:drill_hole_edit' hole.pk %}" class="btn btn-sm btn-outline-secondary">
         <i class="bi bi-pencil me-1"></i>Edit
       </a>
+      <a href="{% url 'core:drill_hole_survey_edit' hole.pk %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-activity me-1"></i>Survey
+      </a>
+      <a href="{% url 'core:drill_hole_path_3d' hole.pk %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-bezier2 me-1"></i>3D Path
+      </a>
       <a href="{% url 'core:cross_section' %}?holes={{ hole.pk }}" class="btn btn-sm btn-outline-secondary">
         <i class="bi bi-layout-split me-1"></i>Cross Section
       </a>

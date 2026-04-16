@@ -264,8 +264,11 @@ def drill_size_preset_detail(request, pk):
         return redirect('core:home_dashboard')
     
     can_edit = is_contractor and preset.status == DrillSizePreset.STATUS_DRAFT
-    can_submit = is_contractor and preset.status == DrillSizePreset.STATUS_DRAFT and preset.submitted_to_client
+    can_submit = is_contractor and preset.status == DrillSizePreset.STATUS_DRAFT
     can_approve = is_client and preset.client_status == DrillSizePreset.CLIENT_PENDING
+    
+    # Get list of active clients for submission
+    clients = Client.objects.filter(is_active=True).order_by('name') if can_submit else []
     
     context = {
         'preset': preset,
@@ -274,6 +277,7 @@ def drill_size_preset_detail(request, pk):
         'can_approve': can_approve,
         'is_contractor': is_contractor,
         'is_client': is_client,
+        'clients': clients,
     }
     return render(request, 'core/preset_drill_size_detail.html', context)
 
@@ -337,28 +341,36 @@ def drill_size_preset_submit(request, pk):
         ).first()
         if not contractor_ws and not request.user.is_superuser:
             messages.error(request, 'You do not have permission to submit this preset.')
-            return redirect('drill_size_preset_detail', pk=preset.pk)
+            return redirect('core:preset_detail', pk=preset.pk)
     except Exception:
         return redirect('core:home_dashboard')
     
     if preset.status != DrillSizePreset.STATUS_DRAFT:
         messages.error(request, 'Only draft presets can be submitted.')
-        return redirect('drill_size_preset_detail', pk=preset.pk)
-    
-    if not preset.submitted_to_client:
-        messages.error(request, 'Please assign a client before submitting.')
-        return redirect('drill_size_preset_detail', pk=preset.pk)
+        return redirect('core:preset_detail', pk=preset.pk)
     
     if request.method == 'POST':
+        client_id = request.POST.get('submitted_to_client')
+        if not client_id:
+            messages.error(request, 'Please select a client.')
+            return redirect('core:preset_detail', pk=preset.pk)
+        
+        try:
+            client = Client.objects.get(pk=int(client_id), is_active=True)
+        except (Client.DoesNotExist, ValueError):
+            messages.error(request, 'Invalid client selected.')
+            return redirect('core:preset_detail', pk=preset.pk)
+        
+        preset.submitted_to_client = client
         preset.status = DrillSizePreset.STATUS_SUBMITTED
         preset.client_status = DrillSizePreset.CLIENT_PENDING
         preset.submitted_to_client_at = timezone.now()
         preset.save()
         
-        messages.success(request, f'Preset "{preset.name}" submitted to {preset.submitted_to_client.name} for approval.')
-        return redirect('drill_size_preset_detail', pk=preset.pk)
+        messages.success(request, f'Preset "{preset.name}" submitted to {client.name} for approval.')
+        return redirect('core:preset_detail', pk=preset.pk)
     
-    return redirect('drill_size_preset_detail', pk=preset.pk)
+    return redirect('core:preset_detail', pk=preset.pk)
 
 
 @login_required
@@ -512,8 +524,10 @@ def equipment_preset_detail(request, pk):
         return redirect('core:home_dashboard')
     
     can_edit = is_contractor and preset.status == EquipmentPreset.STATUS_DRAFT
-    can_submit = is_contractor and preset.status == EquipmentPreset.STATUS_DRAFT and preset.submitted_to_client
+    can_submit = is_contractor and preset.status == EquipmentPreset.STATUS_DRAFT
     can_approve = is_client and preset.client_status == EquipmentPreset.CLIENT_PENDING
+    
+    clients = Client.objects.filter(is_active=True).order_by('name') if can_submit else []
     
     context = {
         'preset': preset,
@@ -522,8 +536,103 @@ def equipment_preset_detail(request, pk):
         'can_approve': can_approve,
         'is_contractor': is_contractor,
         'is_client': is_client,
+        'clients': clients,
     }
     return render(request, 'core/preset_equipment_detail.html', context)
+
+
+@login_required
+@supervisor_required
+def equipment_preset_edit(request, pk):
+    """Edit a draft equipment preset."""
+    preset = get_object_or_404(EquipmentPreset, pk=pk)
+    try:
+        contractor_ws = WorkspaceMembership.objects.filter(user=request.user, workspace=preset.contractor_workspace).first()
+        if not contractor_ws and not request.user.is_superuser:
+            messages.error(request, 'You do not have permission to edit this preset.')
+            return redirect('core:equipment_preset_detail', pk=preset.pk)
+    except Exception:
+        messages.error(request, 'Error verifying permissions.')
+        return redirect('core:home_dashboard')
+    if preset.status != EquipmentPreset.STATUS_DRAFT:
+        messages.error(request, 'Only draft presets can be edited.')
+        return redirect('core:equipment_preset_detail', pk=preset.pk)
+    if request.method == 'POST':
+        form = EquipmentPresetForm(request.POST, instance=preset, user=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Equipment preset "{preset.name}" updated successfully.')
+            return redirect('core:equipment_preset_detail', pk=preset.pk)
+    else:
+        form = EquipmentPresetForm(instance=preset, user=request.user)
+    return render(request, 'core/preset_form.html', {'form': form, 'preset': preset, 'title': 'Edit Equipment Preset'})
+
+
+@login_required
+@supervisor_required
+def equipment_preset_submit(request, pk):
+    """Submit a draft equipment preset to a client for approval."""
+    preset = get_object_or_404(EquipmentPreset, pk=pk)
+    try:
+        contractor_ws = WorkspaceMembership.objects.filter(user=request.user, workspace=preset.contractor_workspace).first()
+        if not contractor_ws and not request.user.is_superuser:
+            messages.error(request, 'You do not have permission to submit this preset.')
+            return redirect('core:equipment_preset_detail', pk=preset.pk)
+    except Exception:
+        return redirect('core:home_dashboard')
+    if preset.status != EquipmentPreset.STATUS_DRAFT:
+        messages.error(request, 'Only draft presets can be submitted.')
+        return redirect('core:equipment_preset_detail', pk=preset.pk)
+    if request.method == 'POST':
+        client_id = request.POST.get('submitted_to_client')
+        if not client_id:
+            messages.error(request, 'Please select a client.')
+            return redirect('core:equipment_preset_detail', pk=preset.pk)
+        try:
+            client = Client.objects.get(pk=int(client_id), is_active=True)
+        except (Client.DoesNotExist, ValueError):
+            messages.error(request, 'Invalid client selected.')
+            return redirect('core:equipment_preset_detail', pk=preset.pk)
+        preset.submitted_to_client = client
+        preset.status = EquipmentPreset.STATUS_SUBMITTED
+        preset.client_status = EquipmentPreset.CLIENT_PENDING
+        preset.submitted_to_client_at = timezone.now()
+        preset.save()
+        messages.success(request, f'Preset "{preset.name}" submitted to {client.name} for approval.')
+        return redirect('core:equipment_preset_detail', pk=preset.pk)
+    return redirect('core:equipment_preset_detail', pk=preset.pk)
+
+
+@login_required
+def equipment_preset_approve(request, pk):
+    """Client approves or rejects an equipment preset."""
+    preset = get_object_or_404(EquipmentPreset, pk=pk)
+    is_client = hasattr(request.user, 'client_profile') and request.user.client_profile == preset.submitted_to_client
+    if not (is_client or request.user.is_superuser):
+        messages.error(request, 'You do not have permission to approve this preset.')
+        return redirect('core:home_dashboard')
+    if preset.client_status != EquipmentPreset.CLIENT_PENDING:
+        messages.error(request, 'This preset is not pending approval.')
+        return redirect('core:equipment_preset_detail', pk=preset.pk)
+    if request.method == 'POST':
+        decision = request.POST.get('decision')
+        comments = request.POST.get('comments', '')
+        if decision == 'approved':
+            preset.client_status = EquipmentPreset.CLIENT_APPROVED
+            preset.client_approved_at = timezone.now()
+            preset.client_approved_by = request.user
+            preset.client_comments = comments
+            preset.save()
+            messages.success(request, f'Preset "{preset.name}" approved successfully.')
+        elif decision == 'rejected':
+            preset.client_status = EquipmentPreset.CLIENT_REJECTED
+            preset.client_comments = comments
+            preset.save()
+            messages.warning(request, f'Preset "{preset.name}" rejected. Contractor can revise and resubmit.')
+        else:
+            messages.error(request, 'Invalid decision.')
+        return redirect('core:equipment_preset_detail', pk=preset.pk)
+    return redirect('core:equipment_preset_detail', pk=preset.pk)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -632,8 +741,10 @@ def consumable_preset_detail(request, pk):
         return redirect('core:home_dashboard')
     
     can_edit = is_contractor and preset.status == ConsumablePreset.STATUS_DRAFT
-    can_submit = is_contractor and preset.status == ConsumablePreset.STATUS_DRAFT and preset.submitted_to_client
+    can_submit = is_contractor and preset.status == ConsumablePreset.STATUS_DRAFT
     can_approve = is_client and preset.client_status == ConsumablePreset.CLIENT_PENDING
+    
+    clients = Client.objects.filter(is_active=True).order_by('name') if can_submit else []
     
     context = {
         'preset': preset,
@@ -642,8 +753,103 @@ def consumable_preset_detail(request, pk):
         'can_approve': can_approve,
         'is_contractor': is_contractor,
         'is_client': is_client,
+        'clients': clients,
     }
     return render(request, 'core/preset_consumable_detail.html', context)
+
+
+@login_required
+@supervisor_required
+def consumable_preset_edit(request, pk):
+    """Edit a draft consumable preset."""
+    preset = get_object_or_404(ConsumablePreset, pk=pk)
+    try:
+        contractor_ws = WorkspaceMembership.objects.filter(user=request.user, workspace=preset.contractor_workspace).first()
+        if not contractor_ws and not request.user.is_superuser:
+            messages.error(request, 'You do not have permission to edit this preset.')
+            return redirect('core:consumable_preset_detail', pk=preset.pk)
+    except Exception:
+        messages.error(request, 'Error verifying permissions.')
+        return redirect('core:home_dashboard')
+    if preset.status != ConsumablePreset.STATUS_DRAFT:
+        messages.error(request, 'Only draft presets can be edited.')
+        return redirect('core:consumable_preset_detail', pk=preset.pk)
+    if request.method == 'POST':
+        form = ConsumablePresetForm(request.POST, instance=preset, user=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Consumable preset "{preset.name}" updated successfully.')
+            return redirect('core:consumable_preset_detail', pk=preset.pk)
+    else:
+        form = ConsumablePresetForm(instance=preset, user=request.user)
+    return render(request, 'core/preset_form.html', {'form': form, 'preset': preset, 'title': 'Edit Consumable Preset'})
+
+
+@login_required
+@supervisor_required
+def consumable_preset_submit(request, pk):
+    """Submit a draft consumable preset to a client for approval."""
+    preset = get_object_or_404(ConsumablePreset, pk=pk)
+    try:
+        contractor_ws = WorkspaceMembership.objects.filter(user=request.user, workspace=preset.contractor_workspace).first()
+        if not contractor_ws and not request.user.is_superuser:
+            messages.error(request, 'You do not have permission to submit this preset.')
+            return redirect('core:consumable_preset_detail', pk=preset.pk)
+    except Exception:
+        return redirect('core:home_dashboard')
+    if preset.status != ConsumablePreset.STATUS_DRAFT:
+        messages.error(request, 'Only draft presets can be submitted.')
+        return redirect('core:consumable_preset_detail', pk=preset.pk)
+    if request.method == 'POST':
+        client_id = request.POST.get('submitted_to_client')
+        if not client_id:
+            messages.error(request, 'Please select a client.')
+            return redirect('core:consumable_preset_detail', pk=preset.pk)
+        try:
+            client = Client.objects.get(pk=int(client_id), is_active=True)
+        except (Client.DoesNotExist, ValueError):
+            messages.error(request, 'Invalid client selected.')
+            return redirect('core:consumable_preset_detail', pk=preset.pk)
+        preset.submitted_to_client = client
+        preset.status = ConsumablePreset.STATUS_SUBMITTED
+        preset.client_status = ConsumablePreset.CLIENT_PENDING
+        preset.submitted_to_client_at = timezone.now()
+        preset.save()
+        messages.success(request, f'Preset "{preset.name}" submitted to {client.name} for approval.')
+        return redirect('core:consumable_preset_detail', pk=preset.pk)
+    return redirect('core:consumable_preset_detail', pk=preset.pk)
+
+
+@login_required
+def consumable_preset_approve(request, pk):
+    """Client approves or rejects a consumable preset."""
+    preset = get_object_or_404(ConsumablePreset, pk=pk)
+    is_client = hasattr(request.user, 'client_profile') and request.user.client_profile == preset.submitted_to_client
+    if not (is_client or request.user.is_superuser):
+        messages.error(request, 'You do not have permission to approve this preset.')
+        return redirect('core:home_dashboard')
+    if preset.client_status != ConsumablePreset.CLIENT_PENDING:
+        messages.error(request, 'This preset is not pending approval.')
+        return redirect('core:consumable_preset_detail', pk=preset.pk)
+    if request.method == 'POST':
+        decision = request.POST.get('decision')
+        comments = request.POST.get('comments', '')
+        if decision == 'approved':
+            preset.client_status = ConsumablePreset.CLIENT_APPROVED
+            preset.client_approved_at = timezone.now()
+            preset.client_approved_by = request.user
+            preset.client_comments = comments
+            preset.save()
+            messages.success(request, f'Preset "{preset.name}" approved successfully.')
+        elif decision == 'rejected':
+            preset.client_status = ConsumablePreset.CLIENT_REJECTED
+            preset.client_comments = comments
+            preset.save()
+            messages.warning(request, f'Preset "{preset.name}" rejected. Contractor can revise and resubmit.')
+        else:
+            messages.error(request, 'Invalid decision.')
+        return redirect('core:consumable_preset_detail', pk=preset.pk)
+    return redirect('core:consumable_preset_detail', pk=preset.pk)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

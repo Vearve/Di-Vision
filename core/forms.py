@@ -247,7 +247,7 @@ class DrillSizePresetForm(forms.ModelForm):
 
     class Meta:
         model = DrillSizePreset
-        fields = ['name', 'rate_per_meter', 'contractor_workspace', 'submitted_to_client']
+        fields = ['name', 'rate_per_meter']
         widgets = {
             'rate_per_meter': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Rate per meter'}),
         }
@@ -270,7 +270,7 @@ class EquipmentPresetForm(forms.ModelForm):
 
     class Meta:
         model = EquipmentPreset
-        fields = ['name', 'rate', 'period', 'contractor_workspace', 'submitted_to_client']
+        fields = ['name', 'rate', 'period']
         widgets = {
             'rate': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Rate amount'}),
         }
@@ -293,7 +293,7 @@ class ConsumablePresetForm(forms.ModelForm):
 
     class Meta:
         model = ConsumablePreset
-        fields = ['name', 'rate', 'unit', 'contractor_workspace', 'submitted_to_client']
+        fields = ['name', 'rate', 'unit']
         widgets = {
             'rate': forms.NumberInput(attrs={'step': '0.01'}),
             'unit': forms.TextInput(attrs={'placeholder': 'e.g., per unit, per meter'}),
@@ -317,7 +317,7 @@ class AdditionalChargePresetForm(forms.ModelForm):
 
     class Meta:
         model = AdditionalChargePreset
-        fields = ['name', 'rate', 'unit', 'charge_type', 'workspace', 'submitted_to_client']
+        fields = ['name', 'rate', 'unit', 'charge_type']
         widgets = {
             'rate': forms.NumberInput(attrs={'step': '0.01'}),
             'unit': forms.TextInput(attrs={'placeholder': 'e.g., per unit, per trip, per day'}),

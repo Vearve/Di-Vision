@@ -56,11 +56,17 @@ urlpatterns = [
     path('presets/equipment/', preset_views.equipment_preset_list, name='equipment_preset_list'),
     path('presets/equipment/create/', preset_views.equipment_preset_create, name='equipment_preset_create'),
     path('presets/equipment/<int:pk>/', preset_views.equipment_preset_detail, name='equipment_preset_detail'),
+    path('presets/equipment/<int:pk>/edit/', preset_views.equipment_preset_edit, name='equipment_preset_edit'),
+    path('presets/equipment/<int:pk>/submit/', preset_views.equipment_preset_submit, name='equipment_preset_submit'),
+    path('presets/equipment/<int:pk>/approve/', preset_views.equipment_preset_approve, name='equipment_preset_approve'),
     
     # ── Consumable Presets ──────────────────────────────────────────────────────
     path('presets/consumable/', preset_views.consumable_preset_list, name='consumable_preset_list'),
     path('presets/consumable/create/', preset_views.consumable_preset_create, name='consumable_preset_create'),
     path('presets/consumable/<int:pk>/', preset_views.consumable_preset_detail, name='consumable_preset_detail'),
+    path('presets/consumable/<int:pk>/edit/', preset_views.consumable_preset_edit, name='consumable_preset_edit'),
+    path('presets/consumable/<int:pk>/submit/', preset_views.consumable_preset_submit, name='consumable_preset_submit'),
+    path('presets/consumable/<int:pk>/approve/', preset_views.consumable_preset_approve, name='consumable_preset_approve'),
     
     # ── Additional Charge Presets ───────────────────────────────────────────────
     path('presets/additional-charge/', preset_views.additional_charge_preset_list, name='additional_charge_preset_list'),

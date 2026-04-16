@@ -961,7 +961,12 @@ class DrillSizePreset(models.Model):
 
     class Meta:
         ordering = ['name']
-        unique_together = [('contractor_workspace', 'name', 'submitted_to_client')]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['contractor_workspace', 'name'],
+                name='unique_drill_size_preset_per_workspace'
+            ),
+        ]
 
     def __str__(self):
         return f"{self.name} - {self.contractor_workspace.name} (${self.rate_per_meter}/m)"
@@ -1031,7 +1036,12 @@ class EquipmentPreset(models.Model):
 
     class Meta:
         ordering = ['name']
-        unique_together = [('contractor_workspace', 'name', 'submitted_to_client')]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['contractor_workspace', 'name'],
+                name='unique_equipment_preset_per_workspace'
+            ),
+        ]
 
     def __str__(self):
         return f"{self.name} - {self.get_period_display()} ${self.rate}"
@@ -1094,7 +1104,12 @@ class ConsumablePreset(models.Model):
 
     class Meta:
         ordering = ['name']
-        unique_together = [('contractor_workspace', 'name', 'submitted_to_client')]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['contractor_workspace', 'name'],
+                name='unique_consumable_preset_per_workspace'
+            ),
+        ]
 
     def __str__(self):
         return f"{self.name} - ${self.rate}/{self.unit}"
@@ -1165,7 +1180,12 @@ class AdditionalChargePreset(models.Model):
 
     class Meta:
         ordering = ['charge_type', 'name']
-        unique_together = [('workspace', 'name', 'submitted_to_client')]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['workspace', 'name'],
+                name='unique_additional_charge_preset_per_workspace'
+            ),
+        ]
 
     def __str__(self):
         sign = "+" if self.charge_type == self.CHARGE_TYPE_CHARGE else "-"

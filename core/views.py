@@ -716,12 +716,21 @@ def shift_create(request):
         progress_formset = DrillingProgressFormSet(request.POST, request.FILES, prefix='progress', form_kwargs={'user': request.user})
         activity_formset = ActivityLogFormSet(request.POST, prefix='activity')
         material_formset = MaterialUsedFormSet(request.POST, prefix='material')
-        survey_formset = SurveyFormSet(request.POST, prefix='survey')
-        casing_formset = CasingFormSet(request.POST, prefix='casing')
-        
-        if (form.is_valid() and progress_formset.is_valid() 
+        survey_formset = SurveyFormSet(
+            request.POST if 'survey-TOTAL_FORMS' in request.POST else None,
+            prefix='survey'
+        )
+        casing_formset = CasingFormSet(
+            request.POST if 'casing-TOTAL_FORMS' in request.POST else None,
+            prefix='casing'
+        )
+
+        survey_is_valid = (not survey_formset.is_bound) or survey_formset.is_valid()
+        casing_is_valid = (not casing_formset.is_bound) or casing_formset.is_valid()
+
+        if (form.is_valid() and progress_formset.is_valid()
             and activity_formset.is_valid() and material_formset.is_valid()
-            and survey_formset.is_valid() and casing_formset.is_valid()):
+            and survey_is_valid and casing_is_valid):
             
             # Use transaction to ensure all saves succeed or none do
             from django.db import transaction
@@ -740,12 +749,14 @@ def shift_create(request):
                     
                     material_formset.instance = shift
                     material_formset.save()
-                    
-                    survey_formset.instance = shift
-                    survey_formset.save()
-                    
-                    casing_formset.instance = shift
-                    casing_formset.save()
+
+                    if survey_formset.is_bound:
+                        survey_formset.instance = shift
+                        survey_formset.save()
+
+                    if casing_formset.is_bound:
+                        casing_formset.instance = shift
+                        casing_formset.save()
                 
                 messages.success(request, 'Shift created successfully.')
                 return redirect('core:shift_detail', pk=shift.pk)
@@ -753,7 +764,6 @@ def shift_create(request):
                 messages.error(request, f'Error saving shift: {str(e)}. Please try again.')
                 # Form will re-render with data preserved
         else:
-            # Show validation errors
             messages.error(request, 'Please correct the errors below.')
     else:
         form = DrillShiftForm(user=request.user)
@@ -816,15 +826,20 @@ def shift_update(request, pk):
             request.POST, instance=shift, prefix='material'
         )
         survey_formset = SurveyFormSet(
-            request.POST, instance=shift, prefix='survey'
+            request.POST if 'survey-TOTAL_FORMS' in request.POST else None,
+            instance=shift, prefix='survey'
         )
         casing_formset = CasingFormSet(
-            request.POST, instance=shift, prefix='casing'
+            request.POST if 'casing-TOTAL_FORMS' in request.POST else None,
+            instance=shift, prefix='casing'
         )
-        
-        if (form.is_valid() and progress_formset.is_valid() 
+
+        survey_is_valid = (not survey_formset.is_bound) or survey_formset.is_valid()
+        casing_is_valid = (not casing_formset.is_bound) or casing_formset.is_valid()
+
+        if (form.is_valid() and progress_formset.is_valid()
             and activity_formset.is_valid() and material_formset.is_valid()
-            and survey_formset.is_valid() and casing_formset.is_valid()):
+            and survey_is_valid and casing_is_valid):
             
             # Use transaction to ensure all updates succeed or none do
             from django.db import transaction
@@ -834,8 +849,10 @@ def shift_update(request, pk):
                     progress_formset.save()
                     activity_formset.save()
                     material_formset.save()
-                    survey_formset.save()
-                    casing_formset.save()
+                    if survey_formset.is_bound:
+                        survey_formset.save()
+                    if casing_formset.is_bound:
+                        casing_formset.save()
                 
                 messages.success(request, 'Shift updated successfully.')
                 return redirect('core:shift_detail', pk=shift.pk)

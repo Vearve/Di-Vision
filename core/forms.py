@@ -10,12 +10,37 @@ from .models import (
 class DrillShiftForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        # No additional field processing needed since we only include basic fields
+
+        if user:
+            client_profile = getattr(user, 'client_profile', None)
+            if client_profile and 'client' in self.fields:
+                self.fields['client'].queryset = client_profile.__class__.objects.filter(pk=client_profile.pk)
+                self.fields['client'].initial = client_profile
+            elif 'client' in self.fields:
+                self.fields['client'].queryset = self.fields['client'].queryset.filter(is_active=True)
+
+            try:
+                contractor_ws = WorkspaceMembership.objects.filter(
+                    user=user,
+                    workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+                ).first()
+                if contractor_ws and 'contractor_workspace' in self.fields:
+                    self.fields['contractor_workspace'].initial = contractor_ws.workspace
+                    self.fields['contractor_workspace'].queryset = Workspace.objects.filter(pk=contractor_ws.workspace.pk)
+            except Exception:
+                pass
+
+        if 'shift_type' in self.fields:
+            self.fields['shift_type'].required = False
+            self.fields['shift_type'].initial = DrillShift.SHIFT_DAY
 
     class Meta:
         model = DrillShift
-        fields = ['date', 'rig', 'location', 'notes']
+        fields = ['date', 'shift_type', 'client', 'contractor_workspace', 'rig', 'location',
+                  'supervisor_name', 'driller_name', 'helper1_name', 'helper2_name', 'helper3_name', 'helper4_name',
+                  'start_time', 'end_time', 'notes',
+                  'standby_client', 'standby_client_reason', 'standby_client_remarks', 'standby_client_start_time', 'standby_client_end_time',
+                  'standby_constructor', 'standby_constructor_reason', 'standby_constructor_remarks', 'standby_constructor_start_time', 'standby_constructor_end_time']
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date'}),
             'start_time': forms.TimeInput(attrs={'type': 'time'}),
@@ -33,7 +58,6 @@ class DrillingProgressForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Populate bit size dropdown from approved drill size presets for the user's contractor workspace
         if user is not None:
             try:
                 contractor_ws = WorkspaceMembership.objects.filter(
@@ -45,15 +69,24 @@ class DrillingProgressForm(forms.ModelForm):
                         contractor_workspace=contractor_ws.workspace,
                         client_status=DrillSizePreset.CLIENT_APPROVED
                     ).order_by('name')
-                    if approved_size_presets.exists():
+                    if approved_size_presets.exists() and 'size' in self.fields:
                         choices = [('', 'Select bit size')] + [(preset.name, preset.name) for preset in approved_size_presets]
                         self.fields['size'].choices = choices
             except Exception:
                 pass
 
+        if 'size' in self.fields:
+            self.fields['size'].required = False
+            self.fields['size'].initial = 'HQ'
+
+        for optional_field in ['core_loss', 'core_gain']:
+            if optional_field in self.fields:
+                self.fields[optional_field].required = False
+
     class Meta:
         model = DrillingProgress
-        fields = ['hole_number', 'start_depth', 'end_depth', 'meters_drilled', 'start_time', 'end_time', 'remarks']
+        fields = ['hole_number', 'size', 'start_depth', 'end_depth', 'meters_drilled',
+                  'core_loss', 'core_gain', 'start_time', 'end_time', 'core_tray_image', 'remarks']
         widgets = {
             'start_time': forms.TimeInput(attrs={'type': 'time'}),
             'end_time': forms.TimeInput(attrs={'type': 'time'}),

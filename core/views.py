@@ -497,9 +497,6 @@ def shift_list(request):
         status: Filter shifts by status (draft/submitted/approved/rejected)
         hole_number: Filter by specific hole number
     """
-    if not request.user.is_superuser and request.user.profile.is_client:
-        messages.info(request, 'Clients view drilling activity from the client dashboard.')
-        return redirect('core:client_dashboard')
 
     # Base queryset with optimized related data loading
     shifts = DrillShift.objects.select_related(
@@ -562,6 +559,7 @@ def shift_list(request):
     ).values_list('hole_number', flat=True).distinct().order_by('hole_number')
     
     context = {
+        'shifts': shifts,
         'shift_groups': shift_groups,
         'status_choices': DrillShift.STATUS_CHOICES,
         'hole_numbers': list(all_hole_numbers),

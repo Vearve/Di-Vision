@@ -11,43 +11,11 @@ class DrillShiftForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         
-        if user:
-            # Filter clients based on user's workspace membership
-            # Client users can only select their own client
-            # Contractor users can create shifts for any client
-            
-            client_profile = getattr(user, 'client_profile', None)
-            if client_profile:
-                # User is a client - can only see their own client
-                self.fields['client'].queryset = client_profile.__class__.objects.filter(pk=client_profile.pk)
-                self.fields['client'].initial = client_profile
-            else:
-                # User is a contractor or admin - can see all active clients
-                self.fields['client'].queryset = self.fields['client'].queryset.filter(is_active=True)
-            
-            # Set contractor_workspace based on user's workspace membership
-            try:
-                contractor_ws = WorkspaceMembership.objects.filter(
-                    user=user,
-                    workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
-                ).first()
-                
-                if contractor_ws:
-                    self.fields['contractor_workspace'].initial = contractor_ws.workspace
-                    # Limit contractor workspace choices to their own workspace
-                    self.fields['contractor_workspace'].queryset = Workspace.objects.filter(
-                        pk=contractor_ws.workspace.pk
-                    )
-            except Exception:
-                pass
+        # No additional field processing needed since we only include basic fields
 
     class Meta:
         model = DrillShift
-        fields = ['date', 'shift_type', 'client', 'contractor_workspace', 'rig', 'location', 
-                  'supervisor_name', 'driller_name', 'helper1_name', 'helper2_name', 'helper3_name', 'helper4_name',
-                  'start_time', 'end_time', 'notes',
-                  'standby_client', 'standby_client_reason', 'standby_client_remarks', 'standby_client_start_time', 'standby_client_end_time',
-                  'standby_constructor', 'standby_constructor_reason', 'standby_constructor_remarks', 'standby_constructor_start_time', 'standby_constructor_end_time']
+        fields = ['date', 'rig', 'location', 'notes']
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date'}),
             'start_time': forms.TimeInput(attrs={'type': 'time'}),
@@ -85,8 +53,7 @@ class DrillingProgressForm(forms.ModelForm):
 
     class Meta:
         model = DrillingProgress
-        fields = ['hole_number', 'size', 'start_depth', 'end_depth', 'meters_drilled', 
-                 'core_loss', 'core_gain', 'start_time', 'end_time', 'core_tray_image', 'remarks']
+        fields = ['hole_number', 'start_depth', 'end_depth', 'meters_drilled', 'start_time', 'end_time', 'remarks']
         widgets = {
             'start_time': forms.TimeInput(attrs={'type': 'time'}),
             'end_time': forms.TimeInput(attrs={'type': 'time'}),
@@ -329,31 +296,43 @@ DrillingProgressFormSet = inlineformset_factory(
     DrillShift, DrillingProgress,
     form=DrillingProgressForm,
     extra=1, can_delete=True,
-    min_num=1, validate_min=True
+    min_num=0, validate_min=False
+)
+
+# Create formsets for inline editing
+DrillingProgressFormSet = inlineformset_factory(
+    DrillShift, DrillingProgress,
+    form=DrillingProgressForm,
+    extra=1, can_delete=True,
+    min_num=0, validate_min=False
 )
 
 ActivityLogFormSet = inlineformset_factory(
     DrillShift, ActivityLog,
     form=ActivityLogForm,
-    extra=1, can_delete=True
+    extra=1, can_delete=True,
+    min_num=0, validate_min=False
 )
 
 MaterialUsedFormSet = inlineformset_factory(
     DrillShift, MaterialUsed,
     form=MaterialUsedForm,
-    extra=1, can_delete=True
+    extra=1, can_delete=True,
+    min_num=0, validate_min=False
 )
 
 SurveyFormSet = inlineformset_factory(
     DrillShift, Survey,
     form=SurveyForm,
-    extra=1, can_delete=True
+    extra=1, can_delete=True,
+    min_num=0, validate_min=False
 )
 
 CasingFormSet = inlineformset_factory(
     DrillShift, Casing,
     form=CasingForm,
-    extra=1, can_delete=True
+    extra=1, can_delete=True,
+    min_num=0, validate_min=False
 )
 
 

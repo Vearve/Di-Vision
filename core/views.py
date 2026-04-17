@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 from decimal import Decimal
 import json
-from .models import BOQReport, BOQAdditionalCharge, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, ApprovalHistory, Client, Alert, BOQLineItem
+from .models import BOQReport, BOQAdditionalCharge, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, ApprovalHistory, Client, Alert, BOQLineItem, WorkspaceMembership, Workspace
 from .forms import (BOQReportForm, BOQAdditionalChargeForm, DrillShiftForm, DrillingProgressFormSet, ActivityLogFormSet, 
                     MaterialUsedFormSet, SurveyFormSet, CasingFormSet)
 from .utils import export_shifts_to_csv, export_monthly_boq, calculate_daily_progress
@@ -1126,6 +1126,17 @@ def boq_report_list(request):
         available_clients = [client]
         selected_client_id = str(client.id)
     else:
+        contractor_workspace_ids = list(
+            WorkspaceMembership.objects.filter(
+                user=request.user,
+                workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+            ).values_list('workspace_id', flat=True)
+        )
+        if not request.user.is_superuser:
+            reports = reports.filter(
+                Q(contractor_workspace_id__in=contractor_workspace_ids) |
+                Q(created_by=request.user)
+            )
         selected_client_id = request.GET.get('client', '')
         if selected_client_id:
             reports = reports.filter(client_id=selected_client_id)
@@ -1168,6 +1179,17 @@ def boq_report_list(request):
 @role_required(['supervisor', 'manager'])
 def boq_report_create(request):
     """Create a draft BOQ report for a client and drilling period."""
+    contractor_workspace = None
+    if not request.user.is_superuser:
+        contractor_workspace_membership = WorkspaceMembership.objects.select_related('workspace').filter(
+            user=request.user,
+            workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+        ).first()
+        if not contractor_workspace_membership:
+            messages.error(request, 'You are not assigned to a contractor workspace.')
+            return redirect('core:boq_report_list')
+        contractor_workspace = contractor_workspace_membership.workspace
+
     if request.method == 'POST':
         # Get the client from POST data to filter presets
         client_id = request.POST.get('client')
@@ -1177,6 +1199,8 @@ def boq_report_create(request):
         if form.is_valid():
             report = form.save(commit=False)
             report.created_by = request.user
+            if contractor_workspace is not None:
+                report.contractor_workspace = contractor_workspace
             report.status = BOQReport.STATUS_DRAFT
             report.client_status = BOQReport.CLIENT_PENDING
             report.save()
@@ -1269,6 +1293,19 @@ def boq_report_detail(request, pk):
         if report.client != client:
             messages.error(request, 'You can only view BOQ reports for your company.')
             return redirect('core:boq_report_list')
+    elif not request.user.is_superuser:
+        contractor_workspace_ids = list(
+            WorkspaceMembership.objects.filter(
+                user=request.user,
+                workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+            ).values_list('workspace_id', flat=True)
+        )
+        can_access = report.created_by_id == request.user.id or (
+            report.contractor_workspace_id is not None and report.contractor_workspace_id in contractor_workspace_ids
+        )
+        if not can_access:
+            messages.error(request, 'You do not have permission to view this BOQ report.')
+            return redirect('core:boq_report_list')
 
     shifts = report.get_shifts_queryset().order_by('-date', '-id')
     
@@ -1316,6 +1353,19 @@ def boq_add_additional_charge(request, pk):
         if report.client != client:
             messages.error(request, 'You can only add additional charges to your own BOQ reports.')
             return redirect('core:boq_report_detail', pk=pk)
+    elif not request.user.is_superuser:
+        contractor_workspace_ids = list(
+            WorkspaceMembership.objects.filter(
+                user=request.user,
+                workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+            ).values_list('workspace_id', flat=True)
+        )
+        can_access = report.created_by_id == request.user.id or (
+            report.contractor_workspace_id is not None and report.contractor_workspace_id in contractor_workspace_ids
+        )
+        if not can_access:
+            messages.error(request, 'You do not have permission to update this BOQ report.')
+            return redirect('core:boq_report_list')
 
     if request.method == 'POST':
         form = BOQAdditionalChargeForm(request.POST)
@@ -1351,6 +1401,19 @@ def boq_update_additional_charge(request, pk, charge_pk):
         if report.client != client:
             messages.error(request, 'You can only update additional charges for your own BOQ reports.')
             return redirect('core:boq_report_detail', pk=pk)
+    elif not request.user.is_superuser:
+        contractor_workspace_ids = list(
+            WorkspaceMembership.objects.filter(
+                user=request.user,
+                workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+            ).values_list('workspace_id', flat=True)
+        )
+        can_access = report.created_by_id == request.user.id or (
+            report.contractor_workspace_id is not None and report.contractor_workspace_id in contractor_workspace_ids
+        )
+        if not can_access:
+            messages.error(request, 'You do not have permission to update this BOQ report.')
+            return redirect('core:boq_report_list')
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -1391,6 +1454,19 @@ def boq_report_export(request, pk):
         if report.client != client:
             messages.error(request, 'You can only export BOQ reports for your company.')
             return redirect('core:boq_report_list')
+    elif not request.user.is_superuser:
+        contractor_workspace_ids = list(
+            WorkspaceMembership.objects.filter(
+                user=request.user,
+                workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+            ).values_list('workspace_id', flat=True)
+        )
+        can_access = report.created_by_id == request.user.id or (
+            report.contractor_workspace_id is not None and report.contractor_workspace_id in contractor_workspace_ids
+        )
+        if not can_access:
+            messages.error(request, 'You do not have permission to export this BOQ report.')
+            return redirect('core:boq_report_list')
 
     shifts = list(report.get_shifts_queryset().order_by('date', 'id'))
     response = HttpResponse(
@@ -1414,6 +1490,24 @@ def boq_submit_to_client(request, pk):
     """Submit a contractor BOQ draft to the client for review."""
     report = get_object_or_404(BOQReport, pk=pk)
 
+    if report.status != BOQReport.STATUS_DRAFT:
+        messages.error(request, 'Only draft BOQ reports can be submitted to client.')
+        return redirect('core:boq_report_detail', pk=pk)
+
+    if not request.user.is_superuser:
+        contractor_workspace_ids = list(
+            WorkspaceMembership.objects.filter(
+                user=request.user,
+                workspace__workspace_type=Workspace.WORKSPACE_CONTRACTOR
+            ).values_list('workspace_id', flat=True)
+        )
+        can_access = report.created_by_id == request.user.id or (
+            report.contractor_workspace_id is not None and report.contractor_workspace_id in contractor_workspace_ids
+        )
+        if not can_access:
+            messages.error(request, 'You do not have permission to submit this BOQ report.')
+            return redirect('core:boq_report_list')
+
     if request.method == 'POST':
         report.status = BOQReport.STATUS_SUBMITTED
         report.client_status = BOQReport.CLIENT_PENDING
@@ -1434,6 +1528,10 @@ def client_review_boq(request, pk):
     if report.client != client:
         messages.error(request, 'You can only review BOQ reports for your company.')
         return redirect('core:boq_report_list')
+
+    if report.status != BOQReport.STATUS_SUBMITTED or report.client_status != BOQReport.CLIENT_PENDING:
+        messages.error(request, 'This BOQ is not pending client review.')
+        return redirect('core:boq_report_detail', pk=pk)
 
     if request.method == 'POST':
         decision = request.POST.get('decision')

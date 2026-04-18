@@ -379,6 +379,7 @@ def drill_size_preset_submit(request, pk):
 def drill_size_preset_approve(request, pk):
     """
     Client approves or rejects a submitted preset.
+    Redirects clients back to client_preset_approval_dashboard after approval.
     """
     preset = get_object_or_404(DrillSizePreset, pk=pk)
     
@@ -394,7 +395,10 @@ def drill_size_preset_approve(request, pk):
     
     if preset.client_status != DrillSizePreset.CLIENT_PENDING:
         messages.error(request, 'This preset is not pending approval.')
-        return redirect('drill_size_preset_detail', pk=preset.pk)
+        # Redirect clients back to client dashboard, others to preset detail
+        if is_client:
+            return redirect('core:client_preset_approval_dashboard')
+        return redirect('core:drill_size_preset_detail', pk=preset.pk)
     
     if request.method == 'POST':
         decision = request.POST.get('decision')
@@ -415,9 +419,15 @@ def drill_size_preset_approve(request, pk):
         else:
             messages.error(request, 'Invalid decision.')
         
-        return redirect('drill_size_preset_detail', pk=preset.pk)
+        # Redirect clients back to client dashboard, others to preset detail
+        if is_client:
+            return redirect('core:client_preset_approval_dashboard')
+        return redirect('core:drill_size_preset_detail', pk=preset.pk)
     
-    return redirect('drill_size_preset_detail', pk=preset.pk)
+    # GET request - redirect clients back to client dashboard
+    if is_client:
+        return redirect('core:client_preset_approval_dashboard')
+    return redirect('core:drill_size_preset_detail', pk=preset.pk)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

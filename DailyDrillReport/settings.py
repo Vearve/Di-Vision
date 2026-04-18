@@ -13,7 +13,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from decouple import config
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -140,22 +141,60 @@ else:
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': config('DB_ENGINE', default='django.db.backends.sqlite3'),
-        'NAME': config('DB_NAME', default=str(BASE_DIR / 'db.sqlite3')),
-        'OPTIONS': {
-            # Increase timeout for SQLite to handle multiple formset saves
-            # Note: This is a temporary fix - migrate to PostgreSQL for production
-            'timeout': 20,  # Increase from default 5 seconds to 20
-        } if config('DB_ENGINE', default='django.db.backends.sqlite3') == 'django.db.backends.sqlite3' else {},
-        'USER': config('DB_USER', default=''),
-        'PASSWORD': config('DB_PASSWORD', default=''),
-        'HOST': config('DB_HOST', default=''),
-        'PORT': config('DB_PORT', default=''),
-        'CONN_MAX_AGE': 600 if config('DB_ENGINE', default='django.db.backends.sqlite3').startswith('django.db.backends.postgresql') else 0,
+DATABASE_URL = config('DATABASE_URL', default='').strip()
+IS_RENDER = bool(os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_URL'))
+
+
+def _db_config_from_url(database_url: str) -> dict:
+    parsed = urlparse(database_url)
+    scheme = (parsed.scheme or '').lower()
+
+    if scheme in ('postgres', 'postgresql'):
+        if not parsed.path or parsed.path == '/':
+            raise ImproperlyConfigured('DATABASE_URL is missing a database name.')
+
+        db_config = {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': parsed.path.lstrip('/'),
+            'USER': unquote(parsed.username or ''),
+            'PASSWORD': unquote(parsed.password or ''),
+            'HOST': parsed.hostname or '',
+            'PORT': str(parsed.port or ''),
+            'CONN_MAX_AGE': 600,
+            'OPTIONS': {},
+        }
+        if not DEBUG:
+            db_config['OPTIONS']['sslmode'] = 'require'
+        return db_config
+
+    if scheme == 'sqlite':
+        sqlite_path = parsed.path if parsed.path else str(BASE_DIR / 'db.sqlite3')
+        return {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': sqlite_path,
+            'OPTIONS': {'timeout': 20},
+        }
+
+    raise ImproperlyConfigured(
+        f"Unsupported DATABASE_URL scheme '{scheme}'. Use postgresql://..."
+    )
+
+
+if DATABASE_URL:
+    DATABASES = {'default': _db_config_from_url(DATABASE_URL)}
+elif not DEBUG or IS_RENDER:
+    raise ImproperlyConfigured(
+        'DATABASE_URL must be set in production/Render to avoid data loss from SQLite fallback.'
+    )
+else:
+    # Local development fallback only.
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': str(BASE_DIR / 'db.sqlite3'),
+            'OPTIONS': {'timeout': 20},
+        }
     }
-}
 
 
 # Password validation

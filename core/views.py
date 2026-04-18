@@ -1607,13 +1607,15 @@ def client_dashboard(request):
     Client dashboard showing shifts submitted for their approval.
     Supports period filters (This Week / This Month / Last Month / Year / Custom)
     and a contractor workspace filter.
+    
+    Role Guard: Only accessible to users with a valid client profile.
     """
-    from .models import Workspace
-    try:
-        client = request.user.client_profile
-    except Exception:
-        messages.error(request, 'Your account is not linked to a client profile.')
+    # Strict role check - ensure user is actually a client
+    if not (hasattr(request.user, 'client_profile') and request.user.profile.is_client):
+        messages.error(request, 'You must be a client user to access this page.')
         return redirect('accounts:profile')
+    
+    client = request.user.client_profile
 
     today = timezone.now().date()
 

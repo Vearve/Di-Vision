@@ -25,9 +25,11 @@ def client_preset_approval_dashboard(request):
     """
     Dashboard for clients to review and approve presets submitted to them.
     Shows all pending presets from all contractors.
+    
+    Role Guard: Only accessible to users with a valid client profile.
     """
-    # Get user's client profile
-    if not hasattr(request.user, 'client_profile'):
+    # Strict role check - ensure user is actually a client
+    if not (hasattr(request.user, 'client_profile') and request.user.profile.is_client):
         messages.error(request, 'You must be a client user to access this page.')
         return redirect('core:home_dashboard')
     
@@ -613,6 +615,9 @@ def equipment_preset_approve(request, pk):
         return redirect('core:home_dashboard')
     if preset.client_status != EquipmentPreset.CLIENT_PENDING:
         messages.error(request, 'This preset is not pending approval.')
+        # Redirect clients back to client dashboard, others to preset detail
+        if is_client:
+            return redirect('core:client_preset_approval_dashboard')
         return redirect('core:equipment_preset_detail', pk=preset.pk)
     if request.method == 'POST':
         decision = request.POST.get('decision')
@@ -631,7 +636,13 @@ def equipment_preset_approve(request, pk):
             messages.warning(request, f'Preset "{preset.name}" rejected. Contractor can revise and resubmit.')
         else:
             messages.error(request, 'Invalid decision.')
+        # Redirect clients back to client dashboard, others to preset detail
+        if is_client:
+            return redirect('core:client_preset_approval_dashboard')
         return redirect('core:equipment_preset_detail', pk=preset.pk)
+    # GET request - redirect clients back to client dashboard
+    if is_client:
+        return redirect('core:client_preset_approval_dashboard')
     return redirect('core:equipment_preset_detail', pk=preset.pk)
 
 
@@ -830,6 +841,9 @@ def consumable_preset_approve(request, pk):
         return redirect('core:home_dashboard')
     if preset.client_status != ConsumablePreset.CLIENT_PENDING:
         messages.error(request, 'This preset is not pending approval.')
+        # Redirect clients back to client dashboard, others to preset detail
+        if is_client:
+            return redirect('core:client_preset_approval_dashboard')
         return redirect('core:consumable_preset_detail', pk=preset.pk)
     if request.method == 'POST':
         decision = request.POST.get('decision')
@@ -848,7 +862,13 @@ def consumable_preset_approve(request, pk):
             messages.warning(request, f'Preset "{preset.name}" rejected. Contractor can revise and resubmit.')
         else:
             messages.error(request, 'Invalid decision.')
+        # Redirect clients back to client dashboard, others to preset detail
+        if is_client:
+            return redirect('core:client_preset_approval_dashboard')
         return redirect('core:consumable_preset_detail', pk=preset.pk)
+    # GET request - redirect clients back to client dashboard
+    if is_client:
+        return redirect('core:client_preset_approval_dashboard')
     return redirect('core:consumable_preset_detail', pk=preset.pk)
 
 

@@ -90,4 +90,13 @@ urlpatterns = [
     path('geology/map/', geology_views.geology_map, name='geology_map'),
     path('geology/map/data/', geology_views.geology_map_data, name='geology_map_data'),
     path('geology/cross-section/', geology_views.cross_section, name='cross_section'),
+    
+    # ── Client Geology Views (Phase 1) ──────────────────────────────────────────
+    path('client/geology/holes/', geology_views.client_drill_hole_list, name='client_drill_hole_list'),
+    path('client/geology/holes/<int:pk>/', geology_views.client_drill_hole_detail, name='client_drill_hole_detail'),
+    path('client/geology/map/', geology_views.client_geology_map, name='client_geology_map'),
+    path('client/geology/map/data/', geology_views.client_geology_map_data, name='client_geology_map_data'),
+    path('client/geology/paths-3d/', geology_views.client_drill_hole_paths_3d, name='client_drill_hole_paths_3d'),
+    path('client/geology/paths-3d/export/', geology_views.client_drill_hole_paths_3d_export, name='client_drill_hole_paths_3d_export'),
+    path('client/geology/cross-section/', geology_views.client_cross_section, name='client_cross_section'),
 ]

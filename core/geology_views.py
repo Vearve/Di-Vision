@@ -459,3 +459,284 @@ def cross_section(request):
         'hole_ids_raw': hole_ids_raw,
         'depth_axis_ticks': depth_axis_ticks,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 1 – Client Read-Only Geo Views
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def client_drill_hole_list(request):
+    """List drill holes for the logged-in client (read-only)."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Client view only.")
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("No client profile linked.")
+    
+    holes = DrillHole.objects.filter(
+        client=client_profile
+    ).select_related('client').prefetch_related('lithology_intervals').order_by('hole_id')
+    
+    return render(request, 'core/client_drill_hole_list.html', {
+        'holes': holes,
+        'client': client_profile,
+    })
+
+
+@login_required
+def client_drill_hole_detail(request, pk):
+    """Client read-only view of a drill hole strip-log."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Client view only.")
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("No client profile linked.")
+    
+    hole = get_object_or_404(DrillHole.objects.select_related('client', 'created_by'), pk=pk, client=client_profile)
+    intervals = hole.lithology_intervals.order_by('depth_from')
+
+    max_depth = float(hole.get_max_logged_depth()) or 1
+    strip_log = []
+    for interval in intervals:
+        depth_from = float(interval.depth_from)
+        depth_to = float(interval.depth_to)
+        strip_log.append({
+            'interval': interval,
+            'top_pct': (depth_from / max_depth) * 100,
+            'height_pct': max(((depth_to - depth_from) / max_depth) * 100, 0.5),
+            'colour': interval.display_colour,
+        })
+
+    return render(request, 'core/client_drill_hole_detail.html', {
+        'hole': hole,
+        'intervals': intervals,
+        'strip_log': strip_log,
+        'max_depth': max_depth,
+        'is_client_view': True,
+    })
+
+
+@login_required
+def client_geology_map(request):
+    """Client read-only map of their drill hole collars."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Client view only.")
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("No client profile linked.")
+    
+    holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    
+    return render(request, 'core/client_geology_map.html', {
+        'holes': holes,
+        'client': client_profile,
+        'is_client_view': True,
+    })
+
+
+@login_required
+@require_GET
+def client_geology_map_data(request):
+    """JSON endpoint for client geology map (collar coordinates)."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        return JsonResponse({'error': 'Client view only.'}, status=403)
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        return JsonResponse({'error': 'No client profile linked.'}, status=403)
+    
+    holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    
+    features = []
+    for hole in holes:
+        if hole.collar_latitude is not None and hole.collar_longitude is not None:
+            features.append({
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [float(hole.collar_longitude), float(hole.collar_latitude)],
+                },
+                'properties': {
+                    'hole_id': hole.hole_id,
+                    'collar_elevation': float(hole.collar_elevation) if hole.collar_elevation else None,
+                    'total_depth': float(hole.total_depth) if hole.total_depth else None,
+                    'dip': float(hole.dip) if hole.dip else None,
+                    'azimuth': float(hole.azimuth) if hole.azimuth else None,
+                    'url': reverse('core:client_drill_hole_detail', args=[hole.pk]),
+                },
+            })
+    
+    return JsonResponse({
+        'type': 'FeatureCollection',
+        'features': features,
+    })
+
+
+@login_required
+def client_drill_hole_paths_3d(request):
+    """Client read-only 3D visualization of their drill hole paths."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Client view only.")
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("No client profile linked.")
+    
+    holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    
+    return render(request, 'core/client_drill_hole_paths_3d.html', {
+        'holes': holes,
+        'client': client_profile,
+        'is_client_view': True,
+    })
+
+
+@login_required
+@require_GET
+def client_drill_hole_paths_3d_export(request):
+    """Export client's drill hole paths as GeoJSON."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        return JsonResponse({'error': 'Client view only.'}, status=403)
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        return JsonResponse({'error': 'No client profile linked.'}, status=403)
+    
+    holes = DrillHole.objects.filter(client=client_profile).prefetch_related('survey_stations').order_by('hole_id')
+    
+    features = []
+    for hole in holes:
+        stations = list(hole.survey_stations.order_by('measured_depth'))
+        if len(stations) >= 2:
+            coords = []
+            for station in stations:
+                if station.easting is not None and station.northing is not None:
+                    coords.append([float(station.easting), float(station.northing), float(station.elevation)])
+            
+            if coords:
+                features.append({
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': coords,
+                    },
+                    'properties': {
+                        'hole_id': hole.hole_id,
+                        'total_depth': float(hole.total_depth) if hole.total_depth else None,
+                    },
+                })
+    
+    response = JsonResponse({
+        'type': 'FeatureCollection',
+        'features': features,
+    })
+    response['Content-Disposition'] = f'attachment; filename="drill_paths_{client_profile.name.replace(" ", "_")}.geojson"'
+    return response
+
+
+@login_required
+def client_cross_section(request):
+    """Client read-only cross-section view of their drill holes."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Client view only.")
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("No client profile linked.")
+    
+    all_holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    
+    hole_ids_raw = request.GET.get('holes', '').strip()
+    selected_ids = set()
+    selected_holes = []
+    
+    if hole_ids_raw:
+        try:
+            raw_ids = [int(x.strip()) for x in hole_ids_raw.split(',') if x.strip().isdigit()]
+            selected_holes = [hole for hole in all_holes if hole.pk in raw_ids]
+            selected_ids = set(raw_ids)
+        except (ValueError, TypeError):
+            pass
+    
+    section_data = []
+    max_depth = 0
+    
+    if selected_holes:
+        for hole in selected_holes:
+            max_depth = max(max_depth, float(hole.get_max_logged_depth() or 1))
+    
+    if max_depth == 0:
+        max_depth = request.GET.get('max_depth', 1)
+        if isinstance(max_depth, str):
+            try:
+                max_depth = float(max_depth)
+            except ValueError:
+                max_depth = 1
+    else:
+        max_depth = request.GET.get('max_depth', None) or max_depth
+        if isinstance(max_depth, str):
+            try:
+                max_depth = float(max_depth)
+            except ValueError:
+                max_depth = 1
+    
+    for hole in selected_holes:
+        intervals = list(hole.lithology_intervals.order_by('depth_from'))
+        bars = []
+        for iv in intervals:
+            d_from = float(iv.depth_from)
+            d_to = float(iv.depth_to)
+            bars.append({
+                'depth_from': d_from,
+                'depth_to': d_to,
+                'height_pct': max(((d_to - d_from) / max_depth) * 100, 0.5),
+                'top_pct': (d_from / max_depth) * 100,
+                'colour': iv.display_colour,
+                'label': iv.get_lithology_code_display(),
+                'description': iv.description,
+            })
+        section_data.append({
+            'hole': hole,
+            'bars': bars,
+            'max_depth': max_depth,
+        })
+    
+    if section_data:
+        axis_max = section_data[0]['max_depth']
+        depth_axis_ticks = [
+            {'pct': pct, 'depth': round((pct / 100) * axis_max, 1)}
+            for pct in range(0, 101, 10)
+        ]
+    else:
+        depth_axis_ticks = []
+    
+    return render(request, 'core/client_cross_section.html', {
+        'all_holes': all_holes,
+        'selected_holes': selected_holes,
+        'selected_ids': selected_ids,
+        'section_data': section_data,
+        'hole_ids_raw': hole_ids_raw,
+        'depth_axis_ticks': depth_axis_ticks,
+        'is_client_view': True,
+    })

@@ -1,0 +1,154 @@
+{% extends 'core/base.html' %}
+{% block title %}{{ hole.hole_id }} – Strip Log (Client View){% endblock %}
+{% block extra_css %}
+<style>
+  .strip-log-container { position: relative; width: 80px; min-height: 400px; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; }
+  .strip-segment { position: absolute; width: 100%; transition: opacity .15s; cursor: pointer; }
+  .strip-segment:hover { opacity: .75; }
+  .depth-axis { position: relative; min-height: 400px; width: 50px; }
+  .depth-tick { position: absolute; right: 4px; font-size: 11px; color: #666; transform: translateY(-50%); }
+  .legend-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; vertical-align: middle; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-layers me-2"></i>{{ hole.hole_id }}</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:client_drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item active">{{ hole.hole_id }}</li>
+      </ol></nav>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'core:client_cross_section' %}?holes={{ hole.pk }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-layout-split me-1"></i>Cross Section
+      </a>
+    </div>
+  </div>
+
+  <!-- Metadata cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center">
+          <h2 class="display-6 mb-0">{{ hole.hole_id }}</h2>
+          <small class="text-muted">{{ hole.project_name|default:"—" }}</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center">
+          <small class="text-muted d-block">Total Depth</small>
+          <h5 class="mb-0">{{ hole.total_depth|default:"—" }} m</h5>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center">
+          <small class="text-muted d-block">Collar Elevation</small>
+          <h5 class="mb-0">{{ hole.collar_elevation|default:"—" }} m</h5>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center">
+          <small class="text-muted d-block">Logged Intervals</small>
+          <h5 class="mb-0">{{ intervals|length }}</h5>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Strip Log Visualization -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Strip Log</h6>
+    </div>
+    <div class="card-body">
+      <div class="d-flex" style="gap: 20px; align-items: flex-start;">
+        <!-- Depth Axis -->
+        <div class="depth-axis">
+          <div style="position: relative; height: 400px;">
+            {% for i in "012345678901" %}
+              {% with pct=i|add:0 %}
+                <div class="depth-tick" style="top: {{ pct|mul:50 }}px;">
+                  {{ pct|mul:10 }}%
+                </div>
+              {% endwith %}
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Strip Log Container -->
+        <div class="strip-log-container">
+          {% for item in strip_log %}
+            <div class="strip-segment"
+              style="top: {{ item.top_pct }}%; height: {{ item.height_pct }}%; background-color: {{ item.colour }};
+                     border-bottom: 1px solid #999;"
+              title="{{ item.interval.get_lithology_code_display }} ({{ item.interval.depth_from }}–{{ item.interval.depth_to }}m)">
+            </div>
+          {% endfor %}
+        </div>
+
+        <!-- Legend -->
+        <div style="flex: 1;">
+          <h6 class="mb-3">Lithology Legend</h6>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            {% for item in strip_log|dictsort:"interval.lithology_code" %}
+              {% if item.interval.get_lithology_code_display %}
+                <div class="d-flex align-items-center gap-2">
+                  <span class="legend-swatch" style="background-color: {{ item.colour }};"></span>
+                  <small>{{ item.interval.get_lithology_code_display }}</small>
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Intervals Table -->
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Lithology Intervals</h6>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 80px;">Colour</th>
+              <th>Code</th>
+              <th>Depth From–To (m)</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for interval in intervals %}
+            <tr>
+              <td>
+                <span class="legend-swatch" style="background-color: {{ interval.display_colour }};"></span>
+              </td>
+              <td><strong>{{ interval.get_lithology_code_display }}</strong></td>
+              <td>{{ interval.depth_from }}–{{ interval.depth_to }}</td>
+              <td><small>{{ interval.description|default:"—" }}</small></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% comment %}
+Helper filter for multiplication.
+{% endcomment %}

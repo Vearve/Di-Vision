@@ -1,0 +1,137 @@
+{% extends 'core/base.html' %}
+{% block title %}Geology – Cross Section (Client View){% endblock %}
+{% block extra_css %}
+<style>
+  .cross-section-viz { position: relative; display: flex; align-items: flex-start; gap: 15px; }
+  .depth-ruler { width: 60px; text-align: right; font-size: 11px; color: #666; }
+  .strips-container { display: flex; gap: 5px; flex: 1; }
+  .strip-column { position: relative; width: 100px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; min-height: 400px; }
+  .strip-bar { position: absolute; width: 100%; border-bottom: 1px solid #999; transition: opacity 0.15s; }
+  .strip-bar:hover { opacity: 0.75; }
+  .strip-label { position: absolute; top: -25px; left: 0; width: 100%; text-align: center; font-weight: bold; font-size: 12px; }
+  .cross-section-controls { margin-bottom: 15px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-layout-split me-2"></i>Cross Section</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:client_drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item active">Cross Section</li>
+      </ol></nav>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'core:client_drill_hole_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-list me-1"></i>List View
+      </a>
+      <a href="{% url 'core:client_geology_map' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-map me-1"></i>2D Map
+      </a>
+      <a href="{% url 'core:client_drill_hole_paths_3d' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-diagram-3 me-1"></i>3D Compare
+      </a>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Configure Cross Section</h6>
+    </div>
+    <div class="card-body">
+      <form method="get" class="cross-section-controls">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label">Select Drill Holes (comma-separated IDs or PKs)</label>
+            <input type="text" name="holes" class="form-control" value="{{ hole_ids_raw }}" placeholder="e.g., 1,2,3">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Max Depth (m)</label>
+            <input type="number" name="max_depth" class="form-control" step="0.1" placeholder="Auto">
+          </div>
+          <div class="col-md-3">
+            <button type="submit" class="btn btn-primary w-100">
+              <i class="bi bi-search me-1"></i>Generate
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Available holes for quick select -->
+      <div class="mt-3">
+        <small class="d-block text-muted mb-2">Quick Select:</small>
+        <div class="btn-group btn-group-sm" role="group">
+          {% for hole in all_holes %}
+          <a href="?holes={{ hole.pk }}" class="btn btn-outline-secondary">{{ hole.hole_id }}</a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cross Section Visualization -->
+  {% if section_data %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Cross Section View (Max Depth: {{ section_data.0.max_depth }} m)</h6>
+    </div>
+    <div class="card-body">
+      <div class="cross-section-viz">
+        <!-- Depth Ruler -->
+        <div class="depth-ruler">
+          {% for tick in depth_axis_ticks %}
+          <div style="position: relative; height: 40px;">
+            {{ tick.depth }}m
+          </div>
+          {% endfor %}
+        </div>
+
+        <!-- Strip Columns -->
+        <div class="strips-container">
+          {% for section in section_data %}
+          <div class="strip-column" style="position: relative; height: 400px;">
+            <div class="strip-label">{{ section.hole.hole_id }}</div>
+            {% for bar in section.bars %}
+            <div class="strip-bar"
+              style="top: {{ bar.top_pct }}%; height: {{ bar.height_pct }}%; background-color: {{ bar.colour }};"
+              title="{{ bar.label }}: {{ bar.depth_from }}–{{ bar.depth_to }}m">
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="mt-4">
+        <h6>Lithology Legend</h6>
+        <div class="row">
+          {% for section in section_data %}
+            {% for bar in section.bars %}
+            <div class="col-md-3">
+              <div class="d-flex align-items-center gap-2">
+                <span style="display: inline-block; width: 20px; height: 20px; background-color: {{ bar.colour }}; border: 1px solid #999; border-radius: 2px;"></span>
+                <div>
+                  <small><strong>{{ bar.label }}</strong></small><br />
+                  <small class="text-muted">{{ bar.description }}</small>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    <strong>No Data:</strong> Select one or more drill holes to generate the cross section.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

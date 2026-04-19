@@ -1,0 +1,169 @@
+{% extends 'core/base.html' %}
+{% block title %}Suggest Coordinate Refinement – {{ hole.hole_id }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-vector-pen me-2"></i>Coordinate Refinement</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:client_drill_hole_list' %}">Drill Holes</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:client_drill_hole_detail' hole.pk %}">{{ hole.hole_id }}</a></li>
+        <li class="breadcrumb-item active">Suggest Refinement</li>
+      </ol></nav>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-8">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Current Coordinates: {{ hole.hole_id }}</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <small class="text-muted d-block">Collar Latitude</small>
+              <strong>{{ hole.collar_latitude|default:"Not set" }}</strong>
+            </div>
+            <div class="col-md-6">
+              <small class="text-muted d-block">Collar Longitude</small>
+              <strong>{{ hole.collar_longitude|default:"Not set" }}</strong>
+            </div>
+            <div class="col-md-6">
+              <small class="text-muted d-block">Collar Elevation (m)</small>
+              <strong>{{ hole.collar_elevation|default:"Not set" }}</strong>
+            </div>
+            <div class="col-md-6">
+              <small class="text-muted d-block">Dip (°)</small>
+              <strong>{{ hole.dip|default:"Not set" }}</strong>
+            </div>
+            <div class="col-md-6">
+              <small class="text-muted d-block">Azimuth (°)</small>
+              <strong>{{ hole.azimuth|default:"Not set" }}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Suggested Changes</h6>
+        </div>
+        <div class="card-body">
+          <form method="post" novalidate>
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="{{ form.suggested_collar_latitude.id_for_label }}" class="form-label">
+                    {{ form.suggested_collar_latitude.label }}
+                  </label>
+                  {{ form.suggested_collar_latitude }}
+                  {% if form.suggested_collar_latitude.errors %}
+                    <div class="invalid-feedback" style="display: block;">
+                      {{ form.suggested_collar_latitude.errors }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="{{ form.suggested_collar_longitude.id_for_label }}" class="form-label">
+                    {{ form.suggested_collar_longitude.label }}
+                  </label>
+                  {{ form.suggested_collar_longitude }}
+                  {% if form.suggested_collar_longitude.errors %}
+                    <div class="invalid-feedback" style="display: block;">
+                      {{ form.suggested_collar_longitude.errors }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label for="{{ form.suggested_collar_elevation.id_for_label }}" class="form-label">
+                    {{ form.suggested_collar_elevation.label }}
+                  </label>
+                  {{ form.suggested_collar_elevation }}
+                  {% if form.suggested_collar_elevation.errors %}
+                    <div class="invalid-feedback" style="display: block;">
+                      {{ form.suggested_collar_elevation.errors }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label for="{{ form.suggested_dip.id_for_label }}" class="form-label">
+                    {{ form.suggested_dip.label }}
+                  </label>
+                  {{ form.suggested_dip }}
+                  {% if form.suggested_dip.errors %}
+                    <div class="invalid-feedback" style="display: block;">
+                      {{ form.suggested_dip.errors }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label for="{{ form.suggested_azimuth.id_for_label }}" class="form-label">
+                    {{ form.suggested_azimuth.label }}
+                  </label>
+                  {{ form.suggested_azimuth }}
+                  {% if form.suggested_azimuth.errors %}
+                    <div class="invalid-feedback" style="display: block;">
+                      {{ form.suggested_azimuth.errors }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group mt-4">
+              <label for="{{ form.rationale.id_for_label }}" class="form-label">
+                {{ form.rationale.label }}
+              </label>
+              {{ form.rationale }}
+              <small class="form-text text-muted d-block mt-1">
+                Explain why you're suggesting these coordinate changes. Include any survey notes or corrections.
+              </small>
+              {% if form.rationale.errors %}
+                <div class="invalid-feedback" style="display: block;">
+                  {{ form.rationale.errors }}
+                </div>
+              {% endif %}
+            </div>
+
+            <div class="d-flex gap-2 mt-4">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>Submit Suggestion
+              </button>
+              <a href="{% url 'core:client_drill_hole_detail' hole.pk %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm bg-light">
+        <div class="card-body">
+          <h6 class="card-title">Tips for Coordinate Refinement</h6>
+          <ul style="font-size: 13px; margin-bottom: 0;">
+            <li>Only modify coordinates that you're confident about</li>
+            <li>Leave fields blank if you're not suggesting changes</li>
+            <li>Provide clear justification (survey re-check, GPS correction, etc.)</li>
+            <li>Contractor will review and approve or request changes</li>
+            <li>Approved suggestions will be applied to the hole record</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

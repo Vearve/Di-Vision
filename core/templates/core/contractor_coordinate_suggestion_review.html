@@ -1,0 +1,265 @@
+{% extends 'core/base.html' %}
+{% block title %}Review Coordinate Suggestion – {{ suggestion.drill_hole.hole_id }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-check-square me-2"></i>Review Coordinate Suggestion</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:contractor_coordinate_suggestion_list' %}">Suggestions</a></li>
+        <li class="breadcrumb-item active">{{ suggestion.pk }}</li>
+      </ol></nav>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <!-- Client's Rationale -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Client's Rationale ({{ suggestion.suggested_by.get_full_name }})</h6>
+        </div>
+        <div class="card-body">
+          <p>{{ suggestion.rationale }}</p>
+          <small class="text-muted">Submitted: {{ suggestion.created_at|date:"F d, Y \a\t H:i" }}</small>
+        </div>
+      </div>
+
+      <!-- Current vs Suggested -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Proposed Changes</h6>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+              <thead class="table-light">
+                <tr>
+                  <th style="width: 35%;">Field</th>
+                  <th style="width: 32.5%;">Current</th>
+                  <th style="width: 32.5%;">Suggested</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Collar Latitude</strong></td>
+                  <td>
+                    <code>{{ suggestion.drill_hole.collar_latitude|default:"—" }}</code>
+                  </td>
+                  <td>
+                    {% if suggestion.suggested_collar_latitude %}
+                      <strong class="text-info"><code>{{ suggestion.suggested_collar_latitude }}</code></strong>
+                      <br><small class="text-muted">Δ {{ suggestion.suggested_collar_latitude|add:0.0 }}</small>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Collar Longitude</strong></td>
+                  <td>
+                    <code>{{ suggestion.drill_hole.collar_longitude|default:"—" }}</code>
+                  </td>
+                  <td>
+                    {% if suggestion.suggested_collar_longitude %}
+                      <strong class="text-info"><code>{{ suggestion.suggested_collar_longitude }}</code></strong>
+                      <br><small class="text-muted">Δ {{ suggestion.suggested_collar_longitude|add:0.0 }}</small>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Collar Elevation (m)</strong></td>
+                  <td>
+                    <code>{{ suggestion.drill_hole.collar_elevation|default:"—" }}</code>
+                  </td>
+                  <td>
+                    {% if suggestion.suggested_collar_elevation %}
+                      <strong class="text-info"><code>{{ suggestion.suggested_collar_elevation }}</code></strong>
+                      <br><small class="text-muted">Δ {{ suggestion.suggested_collar_elevation|add:0.0 }}</small>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Dip (°)</strong></td>
+                  <td>
+                    <code>{{ suggestion.drill_hole.dip|default:"—" }}</code>
+                  </td>
+                  <td>
+                    {% if suggestion.suggested_dip %}
+                      <strong class="text-info"><code>{{ suggestion.suggested_dip }}</code></strong>
+                      <br><small class="text-muted">Δ {{ suggestion.suggested_dip|add:0.0 }}</small>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Azimuth (°)</strong></td>
+                  <td>
+                    <code>{{ suggestion.drill_hole.azimuth|default:"—" }}</code>
+                  </td>
+                  <td>
+                    {% if suggestion.suggested_azimuth %}
+                      <strong class="text-info"><code>{{ suggestion.suggested_azimuth }}</code></strong>
+                      <br><small class="text-muted">Δ {{ suggestion.suggested_azimuth|add:0.0 }}</small>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {% if suggestion.status == 'pending' %}
+      <!-- Review Form -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Your Review Decision</h6>
+        </div>
+        <div class="card-body">
+          <form method="post" novalidate>
+            {% csrf_token %}
+
+            <!-- Decision Radio Group -->
+            <div class="mb-4">
+              <label class="form-label"><strong>Decision</strong></label>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="REVIEW_CHOICE" id="approve" value="approve">
+                <label class="form-check-label" for="approve">
+                  <strong>Approve</strong> – Apply the suggested changes to the hole record
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="REVIEW_CHOICE" id="reject" value="reject">
+                <label class="form-check-label" for="reject">
+                  <strong>Reject</strong> – Do not apply changes (provide feedback)
+                </label>
+              </div>
+            </div>
+
+            <!-- Rejection Reason (conditional) -->
+            <div id="rejectReason" style="display: none; margin-bottom: 20px;">
+              <div class="form-group">
+                <label for="{{ form.rejection_reason.id_for_label }}" class="form-label">
+                  {{ form.rejection_reason.label }}
+                </label>
+                {{ form.rejection_reason }}
+                <small class="form-text text-muted d-block mt-1">Required if rejecting the suggestion.</small>
+                {% if form.rejection_reason.errors %}
+                  <div class="invalid-feedback" style="display: block;">
+                    {{ form.rejection_reason.errors }}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>Submit Review
+              </button>
+              <a href="{% url 'core:contractor_coordinate_suggestion_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          const approveRadio = document.getElementById('approve');
+          const rejectRadio = document.getElementById('reject');
+          const rejectReason = document.getElementById('rejectReason');
+
+          function updateRejectVisibility() {
+            if (rejectRadio.checked) {
+              rejectReason.style.display = 'block';
+            } else {
+              rejectReason.style.display = 'none';
+            }
+          }
+
+          approveRadio.addEventListener('change', updateRejectVisibility);
+          rejectRadio.addEventListener('change', updateRejectVisibility);
+        });
+      </script>
+      {% else %}
+      <!-- Already Reviewed Info -->
+      <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>Already Reviewed:</strong> This suggestion has already been reviewed by {{ suggestion.reviewed_by.get_full_name }} on {{ suggestion.reviewed_at|date:"F d, Y H:i" }}.
+      </div>
+
+      {% if suggestion.status == 'approved' %}
+      <div class="alert alert-success">
+        <i class="bi bi-check-circle me-2"></i>
+        <strong>Approved:</strong> The suggested coordinates have been applied to the hole record.
+      </div>
+      {% elif suggestion.status == 'rejected' %}
+      <div class="card border-0 shadow-sm alert-danger">
+        <div class="card-header bg-danger bg-opacity-10">
+          <h6 class="mb-0 text-danger">Rejection Reason</h6>
+        </div>
+        <div class="card-body">
+          <p class="mb-0">{{ suggestion.rejection_reason }}</p>
+        </div>
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    <!-- Sidebar Info -->
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Suggestion Details</h6>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <small class="text-muted d-block">Drill Hole</small>
+            <strong><a href="{% url 'core:drill_hole_detail' suggestion.drill_hole.pk %}">{{ suggestion.drill_hole.hole_id }}</a></strong>
+          </div>
+          <div class="mb-3">
+            <small class="text-muted d-block">Submitted By</small>
+            <strong>{{ suggestion.suggested_by.get_full_name }}</strong>
+          </div>
+          <div class="mb-3">
+            <small class="text-muted d-block">Status</small>
+            <strong>{{ suggestion.get_status_display }}</strong>
+          </div>
+          <div class="mb-3">
+            <small class="text-muted d-block">Submitted</small>
+            <strong>{{ suggestion.created_at|date:"M d, Y H:i" }}</strong>
+          </div>
+          {% if suggestion.reviewed_by %}
+          <div class="mb-3">
+            <small class="text-muted d-block">Reviewed By</small>
+            <strong>{{ suggestion.reviewed_by.get_full_name }}</strong>
+          </div>
+          <div class="mb-3">
+            <small class="text-muted d-block">Reviewed</small>
+            <strong>{{ suggestion.reviewed_at|date:"M d, Y H:i" }}</strong>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mt-3">
+        <div class="card-body">
+          <a href="{% url 'core:contractor_coordinate_suggestion_list' %}" class="btn btn-outline-secondary w-100">
+            <i class="bi bi-arrow-left me-1"></i>Back to Queue
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

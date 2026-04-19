@@ -99,4 +99,13 @@ urlpatterns = [
     path('client/geology/paths-3d/', geology_views.client_drill_hole_paths_3d, name='client_drill_hole_paths_3d'),
     path('client/geology/paths-3d/export/', geology_views.client_drill_hole_paths_3d_export, name='client_drill_hole_paths_3d_export'),
     path('client/geology/cross-section/', geology_views.client_cross_section, name='client_cross_section'),
+    
+    # ── Phase 2 – Coordinate Suggestions (Client QA) ────────────────────────────
+    path('client/geology/suggestions/', geology_views.client_coordinate_suggestion_list, name='client_coordinate_suggestion_list'),
+    path('client/geology/holes/<int:hole_pk>/suggestion/create/', geology_views.client_coordinate_suggestion_create, name='client_coordinate_suggestion_create'),
+    path('client/geology/suggestions/<int:pk>/', geology_views.client_coordinate_suggestion_detail, name='client_coordinate_suggestion_detail'),
+    
+    # ── Phase 2 – Coordinate Suggestions (Contractor Review) ────────────────────
+    path('geology/suggestions/', geology_views.contractor_coordinate_suggestion_list, name='contractor_coordinate_suggestion_list'),
+    path('geology/suggestions/<int:pk>/review/', geology_views.contractor_coordinate_suggestion_review, name='contractor_coordinate_suggestion_review'),
 ]

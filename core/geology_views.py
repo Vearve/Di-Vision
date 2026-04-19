@@ -740,3 +740,156 @@ def client_cross_section(request):
         'depth_axis_ticks': depth_axis_ticks,
         'is_client_view': True,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 2 – Coordinate Suggestion Workflow (Client QA)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def client_coordinate_suggestion_list(request):
+    """List coordinate suggestions for client's drill holes."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Client view only.")
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("No client profile linked.")
+    
+    from .models import CoordinateSuggestion
+    suggestions = CoordinateSuggestion.objects.filter(
+        drill_hole__client=client_profile
+    ).select_related('drill_hole', 'suggested_by', 'reviewed_by').order_by('-created_at')
+    
+    return render(request, 'core/client_coordinate_suggestion_list.html', {
+        'suggestions': suggestions,
+    })
+
+
+@login_required
+def client_coordinate_suggestion_create(request, hole_pk):
+    """Client creates a coordinate suggestion for a drill hole."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Client view only.")
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("No client profile linked.")
+    
+    hole = get_object_or_404(DrillHole, pk=hole_pk, client=client_profile)
+    
+    if request.method == 'POST':
+        from .forms import CoordinateSuggestionForm
+        form = CoordinateSuggestionForm(request.POST)
+        if form.is_valid():
+            suggestion = form.save(commit=False)
+            suggestion.drill_hole = hole
+            suggestion.suggested_by = request.user
+            suggestion.save()
+            messages.success(request, f'Coordinate suggestion for {hole.hole_id} submitted successfully.')
+            return redirect('core:client_coordinate_suggestion_detail', pk=suggestion.pk)
+    else:
+        from .forms import CoordinateSuggestionForm
+        form = CoordinateSuggestionForm(initial={
+            'suggested_collar_latitude': hole.collar_latitude,
+            'suggested_collar_longitude': hole.collar_longitude,
+            'suggested_collar_elevation': hole.collar_elevation,
+            'suggested_dip': hole.dip,
+            'suggested_azimuth': hole.azimuth,
+        })
+    
+    return render(request, 'core/client_coordinate_suggestion_form.html', {
+        'form': form,
+        'hole': hole,
+    })
+
+
+@login_required
+def client_coordinate_suggestion_detail(request, pk):
+    """Client views a coordinate suggestion."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Client view only.")
+    
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("No client profile linked.")
+    
+    from .models import CoordinateSuggestion
+    suggestion = get_object_or_404(CoordinateSuggestion, pk=pk, drill_hole__client=client_profile)
+    
+    return render(request, 'core/client_coordinate_suggestion_detail.html', {
+        'suggestion': suggestion,
+    })
+
+
+@login_required
+def contractor_coordinate_suggestion_list(request):
+    """Contractor views coordinate suggestions needing review."""
+    from accounts.decorators import _is_client_context
+    if _is_client_context(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Contractor view only.")
+    
+    from .models import CoordinateSuggestion
+    suggestions = CoordinateSuggestion.objects.select_related(
+        'drill_hole', 'suggested_by', 'reviewed_by'
+    ).order_by('-created_at')
+    
+    # Filter by status if requested
+    status_filter = request.GET.get('status', '')
+    if status_filter in ['pending', 'approved', 'rejected']:
+        suggestions = suggestions.filter(status=status_filter)
+    
+    return render(request, 'core/contractor_coordinate_suggestion_list.html', {
+        'suggestions': suggestions,
+        'status_filter': status_filter,
+    })
+
+
+@login_required
+def contractor_coordinate_suggestion_review(request, pk):
+    """Contractor reviews and approves/rejects a coordinate suggestion."""
+    from accounts.decorators import _is_client_context
+    if _is_client_context(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Contractor view only.")
+    
+    from .models import CoordinateSuggestion
+    from .forms import CoordinateSuggestionReviewForm
+    suggestion = get_object_or_404(CoordinateSuggestion, pk=pk)
+    
+    if request.method == 'POST':
+        form = CoordinateSuggestionReviewForm(request.POST, instance=suggestion)
+        decision = request.POST.get('REVIEW_CHOICE', '')
+        
+        if decision == 'approve':
+            suggestion.approve(reviewed_by_user=request.user, apply_changes=True)
+            messages.success(request, f'Coordinate suggestion for {suggestion.drill_hole.hole_id} approved and applied.')
+            return redirect('core:contractor_coordinate_suggestion_list')
+        elif decision == 'reject':
+            if not form.is_valid():
+                messages.error(request, 'Please provide a rejection reason.')
+                return render(request, 'core/contractor_coordinate_suggestion_review.html', {
+                    'suggestion': suggestion,
+                    'form': form,
+                })
+            reason = form.cleaned_data.get('rejection_reason', '')
+            suggestion.reject(reviewed_by_user=request.user, reason=reason)
+            messages.success(request, f'Coordinate suggestion for {suggestion.drill_hole.hole_id} rejected.')
+            return redirect('core:contractor_coordinate_suggestion_list')
+    else:
+        form = CoordinateSuggestionReviewForm()
+    
+    return render(request, 'core/contractor_coordinate_suggestion_review.html', {
+        'suggestion': suggestion,
+        'form': form,
+    })

@@ -1577,3 +1577,127 @@ class LithologyInterval(models.Model):
         if self.colour:
             return self.colour
         return self.LITHOLOGY_COLORS.get(self.lithology_code, '#C0C0C0')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 2 – Coordinate Suggestions (Client QA Workflow)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CoordinateSuggestion(models.Model):
+    """
+    Client-proposed coordinate refinements for drill holes.
+    
+    Clients (geologists) can suggest corrections to collar coordinates or survey stations
+    after reviewing drill hole geometry. Contractors review and approve/reject changes.
+    """
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending Review'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
+
+    drill_hole = models.ForeignKey(
+        DrillHole,
+        on_delete=models.CASCADE,
+        related_name='coordinate_suggestions',
+        help_text="The drill hole being suggested for refinement",
+    )
+    suggested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='coordinate_suggestions_made',
+        help_text="Client user who made the suggestion",
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='coordinate_suggestions_reviewed',
+        help_text="Contractor user who reviewed the suggestion",
+    )
+
+    # Suggested changes
+    suggested_collar_latitude = models.DecimalField(
+        max_digits=9, decimal_places=6,
+        null=True, blank=True,
+        help_text="Suggested collar latitude",
+    )
+    suggested_collar_longitude = models.DecimalField(
+        max_digits=9, decimal_places=6,
+        null=True, blank=True,
+        help_text="Suggested collar longitude",
+    )
+    suggested_collar_elevation = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        null=True, blank=True,
+        help_text="Suggested collar elevation (m)",
+    )
+    suggested_dip = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        null=True, blank=True,
+        help_text="Suggested dip angle (degrees)",
+    )
+    suggested_azimuth = models.DecimalField(
+        max_digits=6, decimal_places=2,
+        null=True, blank=True,
+        help_text="Suggested azimuth (degrees, 0–360)",
+    )
+
+    # Justification & status
+    rationale = models.TextField(
+        help_text="Why are these coordinates being suggested?",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        help_text="Current review status",
+    )
+    rejection_reason = models.TextField(
+        blank=True,
+        help_text="If rejected, why was it rejected?",
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name_plural = "Coordinate Suggestions"
+
+    def __str__(self):
+        return f"{self.drill_hole.hole_id} – Coordinate Suggestion #{self.pk} ({self.get_status_display()})"
+
+    def approve(self, reviewed_by_user, apply_changes=True):
+        """Approve the suggestion and optionally apply changes to the drill hole."""
+        self.status = self.STATUS_APPROVED
+        self.reviewed_by = reviewed_by_user
+        self.reviewed_at = timezone.now()
+        self.save()
+        
+        if apply_changes:
+            if self.suggested_collar_latitude is not None:
+                self.drill_hole.collar_latitude = self.suggested_collar_latitude
+            if self.suggested_collar_longitude is not None:
+                self.drill_hole.collar_longitude = self.suggested_collar_longitude
+            if self.suggested_collar_elevation is not None:
+                self.drill_hole.collar_elevation = self.suggested_collar_elevation
+            if self.suggested_dip is not None:
+                self.drill_hole.dip = self.suggested_dip
+            if self.suggested_azimuth is not None:
+                self.drill_hole.azimuth = self.suggested_azimuth
+            self.drill_hole.save()
+
+    def reject(self, reviewed_by_user, reason=''):
+        """Reject the suggestion."""
+        self.status = self.STATUS_REJECTED
+        self.reviewed_by = reviewed_by_user
+        self.reviewed_at = timezone.now()
+        self.rejection_reason = reason
+        self.save()

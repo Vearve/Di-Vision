@@ -1,0 +1,90 @@
+{% extends 'core/base.html' %}
+{% block title %}Coordinate Suggestions – Review Queue{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-check-square me-2"></i>Coordinate Suggestion Review</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item active">QA Review – Coordinate Suggestions</li>
+      </ol></nav>
+    </div>
+  </div>
+
+  <!-- Filter Tabs -->
+  <div class="mb-3">
+    <div class="btn-group" role="group">
+      <a href="?status=" class="btn btn-sm {% if not status_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        All ({{ suggestions.count }})
+      </a>
+      <a href="?status=pending" class="btn btn-sm {% if status_filter == 'pending' %}btn-warning{% else %}btn-outline-warning{% endif %}">
+        Pending
+      </a>
+      <a href="?status=approved" class="btn btn-sm {% if status_filter == 'approved' %}btn-success{% else %}btn-outline-success{% endif %}">
+        Approved
+      </a>
+      <a href="?status=rejected" class="btn btn-sm {% if status_filter == 'rejected' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+        Rejected
+      </a>
+    </div>
+  </div>
+
+  <!-- Suggestions Table -->
+  <div class="table-responsive">
+    <table class="table table-hover table-striped">
+      <thead class="table-light">
+        <tr>
+          <th>Hole ID</th>
+          <th>Submitted By</th>
+          <th>Status</th>
+          <th>Submitted</th>
+          <th>Changes Summary</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for suggestion in suggestions %}
+        <tr>
+          <td><strong>{{ suggestion.drill_hole.hole_id }}</strong></td>
+          <td>{{ suggestion.suggested_by.get_full_name }}</td>
+          <td>
+            {% if suggestion.status == 'pending' %}
+              <span class="badge bg-warning">Pending</span>
+            {% elif suggestion.status == 'approved' %}
+              <span class="badge bg-success">Approved</span>
+            {% elif suggestion.status == 'rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+            {% endif %}
+          </td>
+          <td>{{ suggestion.created_at|date:"M d, Y H:i" }}</td>
+          <td>
+            <small>
+              {% if suggestion.suggested_collar_latitude %}Lat{% endif %}
+              {% if suggestion.suggested_collar_longitude %}Lon{% endif %}
+              {% if suggestion.suggested_collar_elevation %}Elev{% endif %}
+              {% if suggestion.suggested_dip %}Dip{% endif %}
+              {% if suggestion.suggested_azimuth %}Az{% endif %}
+            </small>
+          </td>
+          <td>
+            <a href="{% url 'core:contractor_coordinate_suggestion_review' suggestion.pk %}" class="btn btn-sm btn-outline-primary">
+              {% if suggestion.status == 'pending' %}
+                <i class="bi bi-eye me-1"></i>Review
+              {% else %}
+                <i class="bi bi-eye me-1"></i>View
+              {% endif %}
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-3">No coordinate suggestions {% if status_filter %}with status "{{ status_filter }}"{% endif %} found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

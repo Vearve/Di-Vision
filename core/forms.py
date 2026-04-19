@@ -3,7 +3,7 @@ from django.forms import inlineformset_factory
 from .models import (
     BOQReport, BOQAdditionalCharge, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, Survey, Casing, 
     WorkspaceMembership, Workspace, DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset,
-    DrillHole, LithologyInterval, DrillHoleSurveyStation,
+    DrillHole, LithologyInterval, DrillHoleSurveyStation, CoordinateSuggestion,
 )
 
 
@@ -127,6 +127,65 @@ class DrillingProgressForm(forms.ModelForm):
             'start_time': forms.TimeInput(attrs={'type': 'time'}),
             'end_time': forms.TimeInput(attrs={'type': 'time'}),
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 2 – Coordinate Suggestion Form
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CoordinateSuggestionForm(forms.ModelForm):
+    """Form for clients to suggest coordinate refinements."""
+    
+    class Meta:
+        model = CoordinateSuggestion
+        fields = [
+            'suggested_collar_latitude',
+            'suggested_collar_longitude',
+            'suggested_collar_elevation',
+            'suggested_dip',
+            'suggested_azimuth',
+            'rationale',
+        ]
+        labels = {
+            'suggested_collar_latitude': 'Suggested Collar Latitude (decimal degrees)',
+            'suggested_collar_longitude': 'Suggested Collar Longitude (decimal degrees)',
+            'suggested_collar_elevation': 'Suggested Collar Elevation (m)',
+            'suggested_dip': 'Suggested Dip (degrees)',
+            'suggested_azimuth': 'Suggested Azimuth (0–360 degrees)',
+            'rationale': 'Why are you suggesting these changes?',
+        }
+        widgets = {
+            'suggested_collar_latitude': forms.NumberInput(attrs={'step': '0.000001', 'placeholder': 'e.g., -25.123456'}),
+            'suggested_collar_longitude': forms.NumberInput(attrs={'step': '0.000001', 'placeholder': 'e.g., 134.123456'}),
+            'suggested_collar_elevation': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'e.g., 500.00'}),
+            'suggested_dip': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'max': '90', 'placeholder': 'e.g., 45.00'}),
+            'suggested_azimuth': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'max': '360', 'placeholder': 'e.g., 135.00'}),
+            'rationale': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Describe your reasoning...'}),
+        }
+
+
+class CoordinateSuggestionReviewForm(forms.ModelForm):
+    """Form for contractors to approve/reject coordinate suggestions."""
+    
+    REVIEW_CHOICE = forms.ChoiceField(
+        choices=[('approve', 'Approve'), ('reject', 'Reject')],
+        widget=forms.RadioSelect,
+        label='Review Decision',
+    )
+    
+    class Meta:
+        model = CoordinateSuggestion
+        fields = ['rejection_reason']
+        labels = {
+            'rejection_reason': 'Rejection Reason (if rejecting)',
+        }
+        widgets = {
+            'rejection_reason': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Provide feedback (required if rejecting)...'}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['REVIEW_CHOICE'] = self.REVIEW_CHOICE
 
 
 class ActivityLogForm(forms.ModelForm):

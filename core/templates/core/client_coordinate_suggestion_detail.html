@@ -1,0 +1,184 @@
+{% extends 'core/base.html' %}
+{% block title %}Coordinate Suggestion – {{ suggestion.drill_hole.hole_id }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-vector-pen me-2"></i>{{ suggestion.drill_hole.hole_id }}</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'core:client_coordinate_suggestion_list' %}">Suggestions</a></li>
+        <li class="breadcrumb-item active">{{ suggestion.pk }}</li>
+      </ol></nav>
+    </div>
+    <div>
+      {% if suggestion.status == 'pending' %}
+        <span class="badge bg-warning fs-6">Pending Review</span>
+      {% elif suggestion.status == 'approved' %}
+        <span class="badge bg-success fs-6">Approved</span>
+      {% elif suggestion.status == 'rejected' %}
+        <span class="badge bg-danger fs-6">Rejected</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Details Card -->
+    <div class="col-lg-8">
+      <!-- Rationale -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Your Rationale</h6>
+        </div>
+        <div class="card-body">
+          <p class="mb-0">{{ suggestion.rationale }}</p>
+          <small class="text-muted d-block mt-2">
+            Submitted: {{ suggestion.created_at|date:"F d, Y \a\t H:i" }} by {{ suggestion.suggested_by.get_full_name }}
+          </small>
+        </div>
+      </div>
+
+      <!-- Suggested Changes -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Suggested Changes</h6>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <tr>
+                <th style="width: 40%;">Field</th>
+                <th>Current Value</th>
+                <th>Suggested Value</th>
+              </tr>
+              <tr>
+                <td><strong>Collar Latitude</strong></td>
+                <td>{{ suggestion.drill_hole.collar_latitude|default:"—" }}</td>
+                <td>
+                  {% if suggestion.suggested_collar_latitude %}
+                    <strong class="text-info">{{ suggestion.suggested_collar_latitude }}</strong>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Collar Longitude</strong></td>
+                <td>{{ suggestion.drill_hole.collar_longitude|default:"—" }}</td>
+                <td>
+                  {% if suggestion.suggested_collar_longitude %}
+                    <strong class="text-info">{{ suggestion.suggested_collar_longitude }}</strong>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Collar Elevation (m)</strong></td>
+                <td>{{ suggestion.drill_hole.collar_elevation|default:"—" }}</td>
+                <td>
+                  {% if suggestion.suggested_collar_elevation %}
+                    <strong class="text-info">{{ suggestion.suggested_collar_elevation }}</strong>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Dip (°)</strong></td>
+                <td>{{ suggestion.drill_hole.dip|default:"—" }}</td>
+                <td>
+                  {% if suggestion.suggested_dip %}
+                    <strong class="text-info">{{ suggestion.suggested_dip }}</strong>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Azimuth (°)</strong></td>
+                <td>{{ suggestion.drill_hole.azimuth|default:"—" }}</td>
+                <td>
+                  {% if suggestion.suggested_azimuth %}
+                    <strong class="text-info">{{ suggestion.suggested_azimuth }}</strong>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {% if suggestion.status == 'rejected' %}
+      <!-- Rejection Reason -->
+      <div class="card border-0 shadow-sm alert-danger">
+        <div class="card-header bg-danger bg-opacity-10">
+          <h6 class="mb-0 text-danger">Rejection Reason</h6>
+        </div>
+        <div class="card-body">
+          <p class="mb-0">{{ suggestion.rejection_reason }}</p>
+          <small class="text-muted d-block mt-2">
+            Reviewed: {{ suggestion.reviewed_at|date:"F d, Y \a\t H:i" }} by {{ suggestion.reviewed_by.get_full_name }}
+          </small>
+        </div>
+      </div>
+      {% elif suggestion.status == 'approved' %}
+      <!-- Approved Confirmation -->
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle me-2"></i>
+        <strong>Approved!</strong> Your suggested coordinates have been applied to the hole record.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Suggestion Info</h6>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <small class="text-muted d-block">Drill Hole</small>
+            <strong>{{ suggestion.drill_hole.hole_id }}</strong>
+          </div>
+          <div class="mb-3">
+            <small class="text-muted d-block">Status</small>
+            <strong>{{ suggestion.get_status_display }}</strong>
+          </div>
+          <div class="mb-3">
+            <small class="text-muted d-block">Submitted By</small>
+            <strong>{{ suggestion.suggested_by.get_full_name }}</strong>
+          </div>
+          <div class="mb-3">
+            <small class="text-muted d-block">Submitted Date</small>
+            <strong>{{ suggestion.created_at|date:"M d, Y H:i" }}</strong>
+          </div>
+          {% if suggestion.reviewed_by %}
+          <div class="mb-3">
+            <small class="text-muted d-block">Reviewed By</small>
+            <strong>{{ suggestion.reviewed_by.get_full_name }}</strong>
+          </div>
+          <div class="mb-3">
+            <small class="text-muted d-block">Review Date</small>
+            <strong>{{ suggestion.reviewed_at|date:"M d, Y H:i" }}</strong>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mt-3">
+        <div class="card-body">
+          <a href="{% url 'core:client_coordinate_suggestion_list' %}" class="btn btn-outline-secondary w-100">
+            <i class="bi bi-arrow-left me-1"></i>Back to Suggestions
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

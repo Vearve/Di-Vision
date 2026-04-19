@@ -1,0 +1,85 @@
+{% extends 'core/base.html' %}
+{% block title %}Coordinate Suggestions – My Submissions{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-vector-pen me-2"></i>Coordinate Suggestions</h4>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'core:home_dashboard' %}">Home</a></li>
+        <li class="breadcrumb-item active">QA – Coordinate Suggestions</li>
+      </ol></nav>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'core:client_drill_hole_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-layers me-1"></i>Back to Holes
+      </a>
+    </div>
+  </div>
+
+  <!-- Info Card -->
+  <div class="alert alert-info mb-4">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>Coordinate QA:</strong> Submit suggestions to refine drill hole collar coordinates and survey parameters. Contractor will review and approve/reject changes.
+  </div>
+
+  <!-- Suggestions Table -->
+  <div class="table-responsive">
+    <table class="table table-hover table-striped">
+      <thead class="table-light">
+        <tr>
+          <th>Hole ID</th>
+          <th>Status</th>
+          <th>Submitted</th>
+          <th>Reviewed</th>
+          <th>Changes</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for suggestion in suggestions %}
+        <tr>
+          <td><strong>{{ suggestion.drill_hole.hole_id }}</strong></td>
+          <td>
+            {% if suggestion.status == 'pending' %}
+              <span class="badge bg-warning">Pending</span>
+            {% elif suggestion.status == 'approved' %}
+              <span class="badge bg-success">Approved</span>
+            {% elif suggestion.status == 'rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+            {% endif %}
+          </td>
+          <td>{{ suggestion.created_at|date:"M d, Y H:i" }}</td>
+          <td>
+            {% if suggestion.reviewed_at %}
+              {{ suggestion.reviewed_at|date:"M d, Y H:i" }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <small>
+              {% if suggestion.suggested_collar_latitude %}Lat{% endif %}
+              {% if suggestion.suggested_collar_longitude %}Lon{% endif %}
+              {% if suggestion.suggested_collar_elevation %}Elev{% endif %}
+              {% if suggestion.suggested_dip %}Dip{% endif %}
+              {% if suggestion.suggested_azimuth %}Az{% endif %}
+            </small>
+          </td>
+          <td>
+            <a href="{% url 'core:client_coordinate_suggestion_detail' suggestion.pk %}" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-eye me-1"></i>View
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-3">No suggestions submitted yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

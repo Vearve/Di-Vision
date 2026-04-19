@@ -21,6 +21,25 @@ from accounts.decorators import (
 )
 
 
+def _is_client_user(user):
+    """Workspace-aware client detection used across view guards and redirects."""
+    if not user.is_authenticated or user.is_superuser:
+        return False
+    if hasattr(user, 'client_profile'):
+        return True
+    has_client_workspace = WorkspaceMembership.objects.filter(
+        user=user,
+        workspace__workspace_type=Workspace.WORKSPACE_CLIENT,
+        workspace__is_active=True,
+    ).exists()
+    if has_client_workspace:
+        return True
+
+    # Legacy fallback: some users are client-only via profile.role without client_profile/workspace link.
+    profile = getattr(user, 'profile', None)
+    return bool(profile and profile.is_client)
+
+
 @login_required
 def home_dashboard(request):
     """
@@ -309,7 +328,7 @@ def analytics_dashboard(request):
     Returns:
         Rendered analytics template with trend data for charts
     """
-    if not request.user.is_superuser and request.user.profile.is_client:
+    if _is_client_user(request.user):
         messages.info(request, 'Clients do not have access to the analytics dashboard.')
         return redirect('core:client_dashboard')
 
@@ -519,7 +538,7 @@ def shift_list(request):
     # Apply role-based filters
     if not request.user.is_superuser:
         profile = request.user.profile
-        if profile.is_client:
+        if _is_client_user(request.user):
             # Clients can only see approved shifts
             shifts = shifts.filter(status=DrillShift.STATUS_APPROVED)
         elif profile.is_supervisor:
@@ -604,7 +623,8 @@ def shift_detail(request, pk):
     # Check permissions based on role
     profile = request.user.profile
     if not request.user.is_superuser:
-        if profile.is_client:
+        is_client_user = _is_client_user(request.user)
+        if is_client_user:
             client = getattr(request.user, 'client_profile', None)
             if shift.status != DrillShift.STATUS_APPROVED or shift.client != client:
                 messages.error(request, 'You can only view approved shifts for your company.')
@@ -691,7 +711,7 @@ def shift_detail(request, pk):
             shift.status == DrillShift.STATUS_DRAFT
         ),
         'can_approve': request.user.is_superuser or (
-            not profile.is_client and 
+            not _is_client_user(request.user) and 
             shift.status == DrillShift.STATUS_SUBMITTED
         )
     }
@@ -1042,7 +1062,7 @@ def export_shifts(request):
     # Apply role-based filters
     if not request.user.is_superuser:
         profile = request.user.profile
-        if profile.is_client:
+        if _is_client_user(request.user):
             shifts = shifts.filter(status=DrillShift.STATUS_APPROVED)
         elif profile.is_supervisor:
             shifts = shifts.filter(
@@ -1101,7 +1121,7 @@ def export_boq(request):
     # Apply role-based filters
     if not request.user.is_superuser:
         profile = request.user.profile
-        if profile.is_client:
+        if _is_client_user(request.user):
             shifts = shifts.filter(status=DrillShift.STATUS_APPROVED)
         elif profile.is_supervisor:
             shifts = shifts.filter(
@@ -1138,7 +1158,7 @@ def export_boq(request):
 def boq_report_list(request):
     """List BOQ reports for contractors or clients, depending on the active role."""
     reports = BOQReport.objects.select_related('client', 'created_by', 'client_reviewed_by')
-    is_client_view = not request.user.is_superuser and request.user.profile.is_client
+    is_client_view = _is_client_user(request.user)
 
     if is_client_view:
         client = getattr(request.user, 'client_profile', None)
@@ -1310,8 +1330,8 @@ def boq_report_detail(request, pk):
         pk=pk,
     )
 
-    profile = request.user.profile
-    if not request.user.is_superuser and profile.is_client:
+    is_client_user = _is_client_user(request.user)
+    if is_client_user:
         client = getattr(request.user, 'client_profile', None)
         if report.client != client:
             messages.error(request, 'You can only view BOQ reports for your company.')
@@ -1353,9 +1373,9 @@ def boq_report_detail(request, pk):
         'materials_summary': report.get_materials_summary(),
         'total_meters': report.get_total_meters(),
         'total_shifts': shifts.count(),
-        'is_client_view': (not request.user.is_superuser and profile.is_client),
-        'can_submit_to_client': request.user.is_superuser or (not profile.is_client and report.status == BOQReport.STATUS_DRAFT),
-        'can_client_review': (not request.user.is_superuser and profile.is_client and report.status == BOQReport.STATUS_SUBMITTED and report.client_status == BOQReport.CLIENT_PENDING),
+        'is_client_view': is_client_user,
+        'can_submit_to_client': request.user.is_superuser or (not is_client_user and report.status == BOQReport.STATUS_DRAFT),
+        'can_client_review': (is_client_user and report.status == BOQReport.STATUS_SUBMITTED and report.client_status == BOQReport.CLIENT_PENDING),
         'line_items': line_items,
         'line_items_by_type': line_items_by_type,
         'type_totals': type_totals,
@@ -1369,9 +1389,9 @@ def boq_report_detail(request, pk):
 @login_required
 def boq_add_additional_charge(request, pk):
     report = get_object_or_404(BOQReport, pk=pk)
-    profile = request.user.profile
+    is_client_user = _is_client_user(request.user)
 
-    if not request.user.is_superuser and profile.is_client:
+    if is_client_user:
         client = getattr(request.user, 'client_profile', None)
         if report.client != client:
             messages.error(request, 'You can only add additional charges to your own BOQ reports.')
@@ -1398,7 +1418,7 @@ def boq_add_additional_charge(request, pk):
             charge.proposed_by = request.user
 
             # Auto-approve by the proposing party
-            if profile.is_client:
+            if is_client_user:
                 charge.client_approved = True
                 charge.contractor_approved = False
             else:
@@ -1417,9 +1437,9 @@ def boq_add_additional_charge(request, pk):
 def boq_update_additional_charge(request, pk, charge_pk):
     report = get_object_or_404(BOQReport, pk=pk)
     charge = get_object_or_404(BOQAdditionalCharge, pk=charge_pk, boq_report=report)
-    profile = request.user.profile
+    is_client_user = _is_client_user(request.user)
 
-    if not request.user.is_superuser and profile.is_client:
+    if is_client_user:
         client = getattr(request.user, 'client_profile', None)
         if report.client != client:
             messages.error(request, 'You can only update additional charges for your own BOQ reports.')
@@ -1442,7 +1462,7 @@ def boq_update_additional_charge(request, pk, charge_pk):
         action = request.POST.get('action')
 
         if action == 'approve':
-            if profile.is_client:
+            if is_client_user:
                 charge.client_approved = True
             else:
                 charge.contractor_approved = True
@@ -1470,9 +1490,9 @@ def boq_update_additional_charge(request, pk, charge_pk):
 def boq_report_export(request, pk):
     """Export the exact BOQ package currently being reviewed."""
     report = get_object_or_404(BOQReport.objects.select_related('client', 'contractor_workspace'), pk=pk)
-    profile = request.user.profile
+    is_client_user = _is_client_user(request.user)
 
-    if not request.user.is_superuser and profile.is_client:
+    if is_client_user:
         client = getattr(request.user, 'client_profile', None)
         if report.client != client:
             messages.error(request, 'You can only export BOQ reports for your company.')

@@ -58,6 +58,28 @@ class DrillingProgressForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
 
+        if 'hole_number' in self.fields:
+            hole_choices = [('', 'Select hole')]
+            client_profile = getattr(user, 'client_profile', None) if user else None
+
+            if client_profile:
+                holes_qs = DrillHole.objects.filter(client=client_profile).order_by('hole_id')
+            else:
+                holes_qs = DrillHole.objects.all().order_by('hole_id')
+
+            hole_choices.extend((hole.hole_id, hole.hole_id) for hole in holes_qs)
+
+            # Keep existing value visible for legacy rows even if not in current queryset.
+            current_hole = self.initial.get('hole_number') or getattr(self.instance, 'hole_number', '')
+            if current_hole and all(value != current_hole for value, _label in hole_choices):
+                hole_choices.append((current_hole, f"{current_hole} (legacy)"))
+
+            self.fields['hole_number'] = forms.ChoiceField(
+                choices=hole_choices,
+                required=False,
+                label='Hole Number',
+            )
+
         if user is not None:
             try:
                 contractor_ws = WorkspaceMembership.objects.filter(
@@ -90,7 +112,6 @@ class DrillingProgressForm(forms.ModelForm):
         widgets = {
             'start_time': forms.TimeInput(attrs={'type': 'time'}),
             'end_time': forms.TimeInput(attrs={'type': 'time'}),
-            'hole_number': forms.TextInput(attrs={'placeholder': 'e.g., BH-001'}),
         }
 
 

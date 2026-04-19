@@ -21,6 +21,9 @@
       </ol></nav>
     </div>
     <div class="d-flex gap-2">
+      <a href="{% url 'core:client_geology_map_export' %}" class="btn btn-outline-success btn-sm">
+        <i class="bi bi-download me-1"></i>Export GeoJSON
+      </a>
       <a href="{% url 'core:client_drill_hole_list' %}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-list me-1"></i>List View
       </a>
@@ -57,7 +60,7 @@
         return L.circleMarker(latlng, {
           radius: 8,
           fillColor: '#3388ff',
-          color: '#www',
+          color: '#fff',
           weight: 2,
           opacity: 1,
           fillOpacity: 0.8,

@@ -587,6 +587,47 @@ def client_geology_map_data(request):
 
 
 @login_required
+@require_GET
+def client_geology_map_export(request):
+    """Download client geology map collar points as GeoJSON."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        return JsonResponse({'error': 'Client view only.'}, status=403)
+
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        return JsonResponse({'error': 'No client profile linked.'}, status=403)
+
+    holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+
+    features = []
+    for hole in holes:
+        if hole.collar_latitude is not None and hole.collar_longitude is not None:
+            features.append({
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [float(hole.collar_longitude), float(hole.collar_latitude)],
+                },
+                'properties': {
+                    'hole_id': hole.hole_id,
+                    'collar_elevation': float(hole.collar_elevation) if hole.collar_elevation else None,
+                    'total_depth': float(hole.total_depth) if hole.total_depth else None,
+                    'dip': float(hole.dip) if hole.dip else None,
+                    'azimuth': float(hole.azimuth) if hole.azimuth else None,
+                },
+            })
+
+    response = JsonResponse({
+        'type': 'FeatureCollection',
+        'features': features,
+    })
+    safe_client_name = client_profile.name.replace(' ', '_')
+    response['Content-Disposition'] = f'attachment; filename="collars_{safe_client_name}.geojson"'
+    return response
+
+
+@login_required
 def client_drill_hole_paths_3d(request):
     """Client read-only 3D visualization of their drill hole paths."""
     from .views import _is_client_user
@@ -740,6 +781,72 @@ def client_cross_section(request):
         'depth_axis_ticks': depth_axis_ticks,
         'is_client_view': True,
     })
+
+
+@login_required
+@require_GET
+def client_cross_section_export(request):
+    """Export selected client cross-section data as JSON."""
+    from .views import _is_client_user
+    if not _is_client_user(request.user):
+        return JsonResponse({'error': 'Client view only.'}, status=403)
+
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        return JsonResponse({'error': 'No client profile linked.'}, status=403)
+
+    all_holes = DrillHole.objects.filter(client=client_profile).order_by('hole_id')
+    hole_ids_raw = request.GET.get('holes', '').strip()
+    if not hole_ids_raw:
+        return JsonResponse({'error': 'Please provide hole IDs using ?holes=1,2,3'}, status=400)
+
+    try:
+        raw_ids = [int(x.strip()) for x in hole_ids_raw.split(',') if x.strip().isdigit()]
+    except (ValueError, TypeError):
+        raw_ids = []
+
+    selected_holes = [hole for hole in all_holes if hole.pk in raw_ids]
+    if not selected_holes:
+        return JsonResponse({'error': 'No matching holes found for requested IDs.'}, status=404)
+
+    max_depth = 0
+    for hole in selected_holes:
+        max_depth = max(max_depth, float(hole.get_max_logged_depth() or 1))
+    if max_depth == 0:
+        max_depth = 1
+
+    section_data = []
+    for hole in selected_holes:
+        intervals = list(hole.lithology_intervals.order_by('depth_from'))
+        bars = []
+        for iv in intervals:
+            d_from = float(iv.depth_from)
+            d_to = float(iv.depth_to)
+            bars.append({
+                'depth_from': d_from,
+                'depth_to': d_to,
+                'height_pct': max(((d_to - d_from) / max_depth) * 100, 0.5),
+                'top_pct': (d_from / max_depth) * 100,
+                'colour': iv.display_colour,
+                'label': iv.get_lithology_code_display(),
+                'description': iv.description,
+            })
+        section_data.append({
+            'hole_id': hole.hole_id,
+            'hole_pk': hole.pk,
+            'max_depth': max_depth,
+            'bars': bars,
+        })
+
+    response = JsonResponse({
+        'client': client_profile.name,
+        'requested_hole_ids': raw_ids,
+        'max_depth': max_depth,
+        'section_data': section_data,
+    })
+    safe_client_name = client_profile.name.replace(' ', '_')
+    response['Content-Disposition'] = f'attachment; filename="cross_section_{safe_client_name}.json"'
+    return response
 
 
 # ─────────────────────────────────────────────────────────────────────────────

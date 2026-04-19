@@ -28,7 +28,15 @@ def home_dashboard(request):
     Supports period filters: This Week / This Month / Last Month / Year / Custom
     and an optional Client filter.
     """
-    if not request.user.is_superuser and request.user.profile.is_client:
+    has_client_profile = hasattr(request.user, 'client_profile')
+    has_client_workspace_membership = WorkspaceMembership.objects.filter(
+        user=request.user,
+        workspace__workspace_type=Workspace.WORKSPACE_CLIENT,
+        workspace__is_active=True,
+    ).exists()
+    is_client_user = has_client_profile or has_client_workspace_membership
+
+    if not request.user.is_superuser and is_client_user:
         return redirect('core:client_dashboard')
 
     today = timezone.now().date()
@@ -1610,8 +1618,14 @@ def client_dashboard(request):
     
     Role Guard: Only accessible to users with a valid client profile.
     """
-    # Strict role check - ensure user is actually a client
-    if not (hasattr(request.user, 'client_profile') and request.user.profile.is_client):
+    # Workspace-aware role check to avoid stale profile.role causing contractor UI leakage
+    has_client_profile = hasattr(request.user, 'client_profile')
+    has_client_workspace_membership = WorkspaceMembership.objects.filter(
+        user=request.user,
+        workspace__workspace_type=Workspace.WORKSPACE_CLIENT,
+        workspace__is_active=True,
+    ).exists()
+    if not (has_client_profile or has_client_workspace_membership):
         messages.error(request, 'You must be a client user to access this page.')
         return redirect('accounts:profile')
     

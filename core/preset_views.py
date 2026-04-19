@@ -28,8 +28,8 @@ def client_preset_approval_dashboard(request):
     
     Role Guard: Only accessible to users with a valid client profile.
     """
-    # Strict role check - ensure user is actually a client
-    if not (hasattr(request.user, 'client_profile') and request.user.profile.is_client):
+    # Workspace-aware check: client_profile is the source of truth for client access
+    if not hasattr(request.user, 'client_profile'):
         messages.error(request, 'You must be a client user to access this page.')
         return redirect('core:home_dashboard')
     

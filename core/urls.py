@@ -110,4 +110,11 @@ urlpatterns = [
     # ── Phase 2 – Coordinate Suggestions (Contractor Review) ────────────────────
     path('geology/suggestions/', geology_views.contractor_coordinate_suggestion_list, name='contractor_coordinate_suggestion_list'),
     path('geology/suggestions/<int:pk>/review/', geology_views.contractor_coordinate_suggestion_review, name='contractor_coordinate_suggestion_review'),
+
+    # ── Phase 3 – Lithology QA (Client/Contractor) ─────────────────────────────
+    path('client/geology/qa/', geology_views.client_lithology_qa_list, name='client_lithology_qa_list'),
+    path('client/geology/qa/interval/<int:interval_pk>/create/', geology_views.client_lithology_qa_create, name='client_lithology_qa_create'),
+    path('client/geology/qa/<int:pk>/', geology_views.client_lithology_qa_detail, name='client_lithology_qa_detail'),
+    path('geology/qa/', geology_views.contractor_lithology_qa_queue, name='contractor_lithology_qa_queue'),
+    path('geology/qa/<int:pk>/review/', geology_views.contractor_lithology_qa_review, name='contractor_lithology_qa_review'),
 ]

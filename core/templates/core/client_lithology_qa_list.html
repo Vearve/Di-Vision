@@ -1,0 +1,44 @@
+{% extends 'core/base.html' %}
+{% block title %}Lithology QA Requests{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-clipboard2-check me-2"></i>Lithology QA Requests</h4>
+      <small class="text-muted">Client-side QA issues and contractor responses</small>
+    </div>
+    <a href="{% url 'core:client_drill_hole_list' %}" class="btn btn-outline-secondary btn-sm">Back to Drill Holes</a>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-striped table-hover">
+      <thead class="table-light">
+        <tr>
+          <th>Hole</th>
+          <th>Interval</th>
+          <th>Status</th>
+          <th>Summary</th>
+          <th>Requested</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for item in qa_requests %}
+        <tr>
+          <td>{{ item.interval.drill_hole.hole_id }}</td>
+          <td>{{ item.interval.depth_from }}-{{ item.interval.depth_to }}m</td>
+          <td><span class="badge bg-secondary">{{ item.get_status_display }}</span></td>
+          <td>{{ item.qa_summary|truncatechars:90 }}</td>
+          <td>{{ item.created_at|date:"Y-m-d H:i" }}</td>
+          <td>
+            <a href="{% url 'core:client_lithology_qa_detail' item.pk %}" class="btn btn-sm btn-outline-primary">View</a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-4">No QA requests yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

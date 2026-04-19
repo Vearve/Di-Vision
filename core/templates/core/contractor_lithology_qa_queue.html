@@ -1,0 +1,44 @@
+{% extends 'core/base.html' %}
+{% block title %}Lithology QA Queue{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <h4 class="mb-3"><i class="bi bi-list-check me-2"></i>Contractor Lithology QA Queue</h4>
+
+  <div class="mb-3 d-flex gap-2">
+    <a class="btn btn-sm {% if not status_filter %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?">All</a>
+    <a class="btn btn-sm {% if status_filter == 'pending' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?status=pending">Pending</a>
+    <a class="btn btn-sm {% if status_filter == 'in_review' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?status=in_review">In Review</a>
+    <a class="btn btn-sm {% if status_filter == 'approved' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?status=approved">Approved</a>
+    <a class="btn btn-sm {% if status_filter == 'rejected' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?status=rejected">Rejected</a>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-striped table-hover">
+      <thead class="table-light">
+        <tr>
+          <th>Hole</th>
+          <th>Interval</th>
+          <th>Status</th>
+          <th>Requested By</th>
+          <th>Summary</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for item in qa_requests %}
+        <tr>
+          <td>{{ item.interval.drill_hole.hole_id }}</td>
+          <td>{{ item.interval.depth_from }}-{{ item.interval.depth_to }}m</td>
+          <td><span class="badge bg-secondary">{{ item.get_status_display }}</span></td>
+          <td>{{ item.requested_by }}</td>
+          <td>{{ item.qa_summary|truncatechars:80 }}</td>
+          <td><a href="{% url 'core:contractor_lithology_qa_review' item.pk %}" class="btn btn-sm btn-outline-primary">Open</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-4">No QA requests found.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

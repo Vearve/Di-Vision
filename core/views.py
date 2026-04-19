@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import logging
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -21,11 +22,15 @@ from accounts.decorators import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 def _is_client_user(user):
     """Workspace-aware client detection used across view guards and redirects."""
     if not user.is_authenticated or user.is_superuser:
         return False
     if hasattr(user, 'client_profile'):
+        logger.info('role_diag client_user=True source=client_profile user_id=%s', getattr(user, 'id', None))
         return True
     has_client_workspace = WorkspaceMembership.objects.filter(
         user=user,
@@ -33,11 +38,15 @@ def _is_client_user(user):
         workspace__is_active=True,
     ).exists()
     if has_client_workspace:
+        logger.info('role_diag client_user=True source=workspace_membership user_id=%s', getattr(user, 'id', None))
         return True
 
     # Legacy fallback: some users are client-only via profile.role without client_profile/workspace link.
     profile = getattr(user, 'profile', None)
-    return bool(profile and profile.is_client)
+    is_client = bool(profile and profile.is_client)
+    if is_client:
+        logger.info('role_diag client_user=True source=legacy_profile user_id=%s', getattr(user, 'id', None))
+    return is_client
 
 
 @login_required

@@ -1,0 +1,28 @@
+{% extends 'core/base.html' %}
+{% block title %}Create Lithology QA Request{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 900px;">
+  <h4 class="mb-3"><i class="bi bi-plus-circle me-2"></i>Raise Lithology QA Request</h4>
+  <div class="alert alert-info">
+    Hole: <strong>{{ interval.drill_hole.hole_id }}</strong> | Interval: <strong>{{ interval.depth_from }}-{{ interval.depth_to }}m</strong>
+  </div>
+
+  <form method="post" class="card border-0 shadow-sm">
+    <div class="card-body">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="form-label">QA Summary</label>
+        {{ form.qa_summary }}
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Requested Change</label>
+        {{ form.requested_change }}
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary" type="submit">Submit QA Request</button>
+        <a href="{% url 'core:client_drill_hole_detail' interval.drill_hole.pk %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

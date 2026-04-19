@@ -1,0 +1,53 @@
+{% extends 'core/base.html' %}
+{% block title %}Lithology QA Detail{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1100px;">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">QA #{{ qa_request.pk }} - {{ qa_request.interval.drill_hole.hole_id }}</h4>
+    <span class="badge bg-secondary">{{ qa_request.get_status_display }}</span>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <p class="mb-2"><strong>Interval:</strong> {{ qa_request.interval.depth_from }}-{{ qa_request.interval.depth_to }}m ({{ qa_request.interval.get_lithology_code_display }})</p>
+      <p class="mb-2"><strong>Summary:</strong> {{ qa_request.qa_summary }}</p>
+      <p class="mb-0"><strong>Requested Change:</strong> {{ qa_request.requested_change|default:'-' }}</p>
+      {% if qa_request.contractor_response %}
+        <hr>
+        <p class="mb-0"><strong>Contractor Response:</strong> {{ qa_request.contractor_response }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-light"><strong>Comment Thread</strong></div>
+    <div class="card-body">
+      {% for c in top_comments %}
+        <div class="border rounded p-2 mb-2">
+          <div class="small text-muted mb-1">{{ c.author }} - {{ c.created_at|date:"Y-m-d H:i" }}</div>
+          <div>{{ c.message }}</div>
+          {% for r in c.replies.all %}
+            <div class="ms-4 mt-2 p-2 border-start">
+              <div class="small text-muted mb-1">{{ r.author }} - {{ r.created_at|date:"Y-m-d H:i" }}</div>
+              <div>{{ r.message }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% empty %}
+        <p class="text-muted mb-0">No comments yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <form method="post" class="card border-0 shadow-sm">
+    <div class="card-body">
+      {% csrf_token %}
+      {{ comment_form.message }}
+      <div class="mt-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm">Post Comment</button>
+        <a href="{% url 'core:client_lithology_qa_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

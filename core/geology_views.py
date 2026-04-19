@@ -14,8 +14,22 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET
 
-from .forms import DrillHoleForm, LithologyIntervalFormSet, DrillHoleSurveyStationFormSet
-from .models import Client, DrillHole, LithologyInterval
+from .forms import (
+    DrillHoleForm,
+    LithologyIntervalFormSet,
+    DrillHoleSurveyStationFormSet,
+    LithologyQARequestForm,
+    LithologyQAReviewForm,
+    LithologyQACommentForm,
+)
+from .models import (
+    Client,
+    DrillHole,
+    LithologyInterval,
+    CoordinateSuggestion,
+    LithologyQARequest,
+    LithologyQAComment,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -999,4 +1013,213 @@ def contractor_coordinate_suggestion_review(request, pk):
     return render(request, 'core/contractor_coordinate_suggestion_review.html', {
         'suggestion': suggestion,
         'form': form,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3 – Lithology QA Workflow (Client/Contractor)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def client_lithology_qa_list(request):
+    """List QA requests for client-owned lithology intervals."""
+    from .views import _is_client_user
+    from django.http import HttpResponseForbidden
+
+    if not _is_client_user(request.user):
+        return HttpResponseForbidden('Client view only.')
+
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        return HttpResponseForbidden('No client profile linked.')
+
+    qa_requests = LithologyQARequest.objects.filter(
+        interval__drill_hole__client=client_profile
+    ).select_related(
+        'interval',
+        'interval__drill_hole',
+        'requested_by',
+        'reviewed_by',
+    ).order_by('-created_at')
+
+    return render(request, 'core/client_lithology_qa_list.html', {
+        'qa_requests': qa_requests,
+    })
+
+
+@login_required
+def client_lithology_qa_create(request, interval_pk):
+    """Create a QA request for a lithology interval in the client scope."""
+    from .views import _is_client_user
+    from django.http import HttpResponseForbidden
+
+    if not _is_client_user(request.user):
+        return HttpResponseForbidden('Client view only.')
+
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        return HttpResponseForbidden('No client profile linked.')
+
+    interval = get_object_or_404(
+        LithologyInterval.objects.select_related('drill_hole'),
+        pk=interval_pk,
+        drill_hole__client=client_profile,
+    )
+
+    if request.method == 'POST':
+        form = LithologyQARequestForm(request.POST)
+        if form.is_valid():
+            qa_request = form.save(commit=False)
+            qa_request.interval = interval
+            qa_request.requested_by = request.user
+            qa_request.save()
+            messages.success(request, 'Lithology QA request submitted successfully.')
+            return redirect('core:client_lithology_qa_detail', pk=qa_request.pk)
+    else:
+        form = LithologyQARequestForm()
+
+    return render(request, 'core/client_lithology_qa_form.html', {
+        'form': form,
+        'interval': interval,
+    })
+
+
+@login_required
+def client_lithology_qa_detail(request, pk):
+    """View QA request details and comment thread as client."""
+    from .views import _is_client_user
+    from django.http import HttpResponseForbidden
+
+    if not _is_client_user(request.user):
+        return HttpResponseForbidden('Client view only.')
+
+    client_profile = getattr(request.user, 'client_profile', None)
+    if not client_profile:
+        return HttpResponseForbidden('No client profile linked.')
+
+    qa_request = get_object_or_404(
+        LithologyQARequest.objects.select_related(
+            'interval',
+            'interval__drill_hole',
+            'requested_by',
+            'reviewed_by',
+        ).prefetch_related('comments__author', 'comments__replies__author'),
+        pk=pk,
+        interval__drill_hole__client=client_profile,
+    )
+
+    if request.method == 'POST':
+        comment_form = LithologyQACommentForm(request.POST)
+        if comment_form.is_valid():
+            comment = comment_form.save(commit=False)
+            comment.qa_request = qa_request
+            comment.author = request.user
+            parent_comment_id = request.POST.get('parent_comment_id')
+            if parent_comment_id and parent_comment_id.isdigit():
+                comment.parent_comment_id = int(parent_comment_id)
+            comment.save()
+            messages.success(request, 'Comment posted.')
+            return redirect('core:client_lithology_qa_detail', pk=qa_request.pk)
+    else:
+        comment_form = LithologyQACommentForm()
+
+    top_comments = qa_request.comments.filter(parent_comment__isnull=True).select_related('author')
+    return render(request, 'core/client_lithology_qa_detail.html', {
+        'qa_request': qa_request,
+        'comment_form': comment_form,
+        'top_comments': top_comments,
+    })
+
+
+@login_required
+def contractor_lithology_qa_queue(request):
+    """Contractor queue for lithology QA review."""
+    from accounts.decorators import _is_client_context
+    from django.http import HttpResponseForbidden
+
+    if _is_client_context(request.user):
+        return HttpResponseForbidden('Contractor view only.')
+
+    status_filter = request.GET.get('status', '').strip()
+    qa_requests = LithologyQARequest.objects.select_related(
+        'interval',
+        'interval__drill_hole',
+        'requested_by',
+        'reviewed_by',
+    ).order_by('-created_at')
+    if status_filter in {
+        LithologyQARequest.STATUS_PENDING,
+        LithologyQARequest.STATUS_IN_REVIEW,
+        LithologyQARequest.STATUS_APPROVED,
+        LithologyQARequest.STATUS_REJECTED,
+    }:
+        qa_requests = qa_requests.filter(status=status_filter)
+
+    return render(request, 'core/contractor_lithology_qa_queue.html', {
+        'qa_requests': qa_requests,
+        'status_filter': status_filter,
+    })
+
+
+@login_required
+def contractor_lithology_qa_review(request, pk):
+    """Review and action lithology QA request as contractor."""
+    from accounts.decorators import _is_client_context
+    from django.http import HttpResponseForbidden
+
+    if _is_client_context(request.user):
+        return HttpResponseForbidden('Contractor view only.')
+
+    qa_request = get_object_or_404(
+        LithologyQARequest.objects.select_related(
+            'interval',
+            'interval__drill_hole',
+            'requested_by',
+            'reviewed_by',
+        ).prefetch_related('comments__author', 'comments__replies__author'),
+        pk=pk,
+    )
+
+    if request.method == 'POST' and request.POST.get('form_action') == 'review':
+        review_form = LithologyQAReviewForm(request.POST, instance=qa_request)
+        if review_form.is_valid():
+            decision = review_form.cleaned_data.get('DECISION')
+            response_text = review_form.cleaned_data.get('contractor_response', '')
+            if decision == 'approve':
+                qa_request.approve(reviewer=request.user, response=response_text)
+                messages.success(request, 'QA request approved.')
+            elif decision == 'reject':
+                qa_request.reject(reviewer=request.user, response=response_text)
+                messages.success(request, 'QA request rejected.')
+            else:
+                qa_request.mark_in_review(reviewer=request.user)
+                if response_text:
+                    qa_request.contractor_response = response_text
+                    qa_request.save(update_fields=['contractor_response'])
+                messages.success(request, 'QA request marked as in review.')
+            return redirect('core:contractor_lithology_qa_review', pk=qa_request.pk)
+    else:
+        review_form = LithologyQAReviewForm(instance=qa_request)
+
+    if request.method == 'POST' and request.POST.get('form_action') == 'comment':
+        comment_form = LithologyQACommentForm(request.POST)
+        if comment_form.is_valid():
+            comment = comment_form.save(commit=False)
+            comment.qa_request = qa_request
+            comment.author = request.user
+            parent_comment_id = request.POST.get('parent_comment_id')
+            if parent_comment_id and parent_comment_id.isdigit():
+                comment.parent_comment_id = int(parent_comment_id)
+            comment.save()
+            messages.success(request, 'Comment posted.')
+            return redirect('core:contractor_lithology_qa_review', pk=qa_request.pk)
+    else:
+        comment_form = LithologyQACommentForm()
+
+    top_comments = qa_request.comments.filter(parent_comment__isnull=True).select_related('author')
+    return render(request, 'core/contractor_lithology_qa_review.html', {
+        'qa_request': qa_request,
+        'review_form': review_form,
+        'comment_form': comment_form,
+        'top_comments': top_comments,
     })

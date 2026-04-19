@@ -4,6 +4,7 @@ from .models import (
     BOQReport, BOQAdditionalCharge, DrillShift, DrillingProgress, ActivityLog, MaterialUsed, Survey, Casing, 
     WorkspaceMembership, Workspace, DrillSizePreset, EquipmentPreset, ConsumablePreset, AdditionalChargePreset,
     DrillHole, LithologyInterval, DrillHoleSurveyStation, CoordinateSuggestion,
+    LithologyQARequest, LithologyQAComment,
 )
 
 
@@ -186,6 +187,46 @@ class CoordinateSuggestionReviewForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['REVIEW_CHOICE'] = self.REVIEW_CHOICE
+
+
+class LithologyQARequestForm(forms.ModelForm):
+    """Form for clients to open a lithology QA request."""
+
+    class Meta:
+        model = LithologyQARequest
+        fields = ['qa_summary', 'requested_change']
+        widgets = {
+            'qa_summary': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Describe the QA concern clearly...'}),
+            'requested_change': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Optional: suggested interpretation update'}),
+        }
+
+
+class LithologyQAReviewForm(forms.ModelForm):
+    """Form for contractor to review a lithology QA request."""
+
+    DECISION = forms.ChoiceField(
+        choices=[('approve', 'Approve'), ('reject', 'Reject'), ('in_review', 'Mark In Review')],
+        widget=forms.RadioSelect,
+        label='Review Decision',
+    )
+
+    class Meta:
+        model = LithologyQARequest
+        fields = ['contractor_response']
+        widgets = {
+            'contractor_response': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Review notes / feedback'}),
+        }
+
+
+class LithologyQACommentForm(forms.ModelForm):
+    """Form for threaded comments on QA requests."""
+
+    class Meta:
+        model = LithologyQAComment
+        fields = ['message']
+        widgets = {
+            'message': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Add a comment...'}),
+        }
 
 
 class ActivityLogForm(forms.ModelForm):

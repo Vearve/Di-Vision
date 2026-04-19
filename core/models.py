@@ -1701,3 +1701,103 @@ class CoordinateSuggestion(models.Model):
         self.reviewed_at = timezone.now()
         self.rejection_reason = reason
         self.save()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3 – Lithology QA Workflow (Client/Contractor)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class LithologyQARequest(models.Model):
+    """Client-requested QA review for a lithology interval."""
+    STATUS_PENDING = 'pending'
+    STATUS_IN_REVIEW = 'in_review'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_IN_REVIEW, 'In Review'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
+
+    interval = models.ForeignKey(
+        LithologyInterval,
+        on_delete=models.CASCADE,
+        related_name='qa_requests',
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='lithology_qa_requests_created',
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lithology_qa_requests_reviewed',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    qa_summary = models.TextField(help_text='What issue was identified and what should be checked?')
+    requested_change = models.TextField(blank=True, help_text='Optional requested interpretation change')
+    contractor_response = models.TextField(blank=True, help_text='Contractor response or decision details')
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"QA #{self.pk} – {self.interval.drill_hole.hole_id} ({self.get_status_display()})"
+
+    def mark_in_review(self, reviewer):
+        self.status = self.STATUS_IN_REVIEW
+        self.reviewed_by = reviewer
+        self.reviewed_at = timezone.now()
+        self.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+
+    def approve(self, reviewer, response=''):
+        self.status = self.STATUS_APPROVED
+        self.reviewed_by = reviewer
+        self.reviewed_at = timezone.now()
+        self.contractor_response = response
+        self.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'contractor_response'])
+
+    def reject(self, reviewer, response=''):
+        self.status = self.STATUS_REJECTED
+        self.reviewed_by = reviewer
+        self.reviewed_at = timezone.now()
+        self.contractor_response = response
+        self.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'contractor_response'])
+
+
+class LithologyQAComment(models.Model):
+    """Threaded comments for lithology QA requests."""
+    qa_request = models.ForeignKey(
+        LithologyQARequest,
+        on_delete=models.CASCADE,
+        related_name='comments',
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='lithology_qa_comments',
+    )
+    parent_comment = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='replies',
+    )
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        author_name = self.author.get_username() if self.author else 'Unknown'
+        return f"QA Comment #{self.pk} by {author_name}"

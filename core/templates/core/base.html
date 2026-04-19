@@ -48,6 +48,33 @@
                            <i class="bi bi-receipt"></i> BOQ Reports
                         </a>
                     </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'client_drill_hole_list' or request.resolver_match.url_name == 'client_drill_hole_detail' or request.resolver_match.url_name == 'client_geology_map' or request.resolver_match.url_name == 'client_drill_hole_paths_3d' or request.resolver_match.url_name == 'client_cross_section' or request.resolver_match.url_name == 'client_coordinate_suggestion_list' or request.resolver_match.url_name == 'client_coordinate_suggestion_create' or request.resolver_match.url_name == 'client_coordinate_suggestion_detail' or request.resolver_match.url_name == 'client_lithology_qa_list' or request.resolver_match.url_name == 'client_lithology_qa_create' or request.resolver_match.url_name == 'client_lithology_qa_detail' %}active{% endif %}"
+                           href="#" role="button" data-bs-toggle="dropdown">
+                           <i class="bi bi-layers"></i> Geology
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{% url 'core:client_drill_hole_list' %}">
+                                <i class="bi bi-list-ul me-2"></i>Drill Holes
+                            </a></li>
+                            <li><a class="dropdown-item" href="{% url 'core:client_geology_map' %}">
+                                <i class="bi bi-map me-2"></i>2D Map
+                            </a></li>
+                            <li><a class="dropdown-item" href="{% url 'core:client_cross_section' %}">
+                                <i class="bi bi-layout-split me-2"></i>Cross Section
+                            </a></li>
+                            <li><a class="dropdown-item" href="{% url 'core:client_drill_hole_paths_3d' %}">
+                                <i class="bi bi-bezier2 me-2"></i>3D Paths
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{% url 'core:client_coordinate_suggestion_list' %}">
+                                <i class="bi bi-geo-alt me-2"></i>Coordinate Suggestions
+                            </a></li>
+                            <li><a class="dropdown-item" href="{% url 'core:client_lithology_qa_list' %}">
+                                <i class="bi bi-clipboard2-check me-2"></i>Lithology QA
+                            </a></li>
+                        </ul>
+                    </li>
                     {% else %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'home_dashboard' %}active{% endif %}" 

@@ -212,7 +212,7 @@ def drill_size_preset_create(request):
         
         if not contractor_ws:
             messages.warning(request, 'You are not assigned to a contractor workspace.')
-            return redirect('drill_size_preset_list')
+            return redirect('core:drill_size_preset_list')
         
         contractor_workspace = contractor_ws.workspace
     except Exception:
@@ -228,7 +228,7 @@ def drill_size_preset_create(request):
             preset.status = DrillSizePreset.STATUS_DRAFT
             preset.save()
             messages.success(request, f'Drill size preset "{preset.name}" created successfully.')
-            return redirect('drill_size_preset_detail', pk=preset.pk)
+            return redirect('core:drill_size_preset_detail', pk=preset.pk)
     else:
         form = DrillSizePresetForm(user=request.user)
     
@@ -300,7 +300,7 @@ def drill_size_preset_edit(request, pk):
         ).first()
         if not contractor_ws and not request.user.is_superuser:
             messages.error(request, 'You do not have permission to edit this preset.')
-            return redirect('drill_size_preset_detail', pk=preset.pk)
+            return redirect('core:drill_size_preset_detail', pk=preset.pk)
     except Exception:
         messages.error(request, 'Error verifying permissions.')
         return redirect('core:home_dashboard')
@@ -308,14 +308,14 @@ def drill_size_preset_edit(request, pk):
     # Only allow editing of draft presets
     if preset.status != DrillSizePreset.STATUS_DRAFT:
         messages.error(request, 'Only draft presets can be edited.')
-        return redirect('drill_size_preset_detail', pk=preset.pk)
+        return redirect('core:drill_size_preset_detail', pk=preset.pk)
     
     if request.method == 'POST':
         form = DrillSizePresetForm(request.POST, instance=preset, user=request.user)
         if form.is_valid():
             form.save()
             messages.success(request, f'Drill size preset "{preset.name}" updated successfully.')
-            return redirect('drill_size_preset_detail', pk=preset.pk)
+            return redirect('core:drill_size_preset_detail', pk=preset.pk)
     else:
         form = DrillSizePresetForm(instance=preset, user=request.user)
     
@@ -343,25 +343,25 @@ def drill_size_preset_submit(request, pk):
         ).first()
         if not contractor_ws and not request.user.is_superuser:
             messages.error(request, 'You do not have permission to submit this preset.')
-            return redirect('core:preset_detail', pk=preset.pk)
+            return redirect('core:drill_size_preset_detail', pk=preset.pk)
     except Exception:
         return redirect('core:home_dashboard')
     
     if preset.status != DrillSizePreset.STATUS_DRAFT:
         messages.error(request, 'Only draft presets can be submitted.')
-        return redirect('core:preset_detail', pk=preset.pk)
+        return redirect('core:drill_size_preset_detail', pk=preset.pk)
     
     if request.method == 'POST':
         client_id = request.POST.get('submitted_to_client')
         if not client_id:
             messages.error(request, 'Please select a client.')
-            return redirect('core:preset_detail', pk=preset.pk)
+            return redirect('core:drill_size_preset_detail', pk=preset.pk)
         
         try:
             client = Client.objects.get(pk=int(client_id), is_active=True)
         except (Client.DoesNotExist, ValueError):
             messages.error(request, 'Invalid client selected.')
-            return redirect('core:preset_detail', pk=preset.pk)
+            return redirect('core:drill_size_preset_detail', pk=preset.pk)
         
         preset.submitted_to_client = client
         preset.status = DrillSizePreset.STATUS_SUBMITTED
@@ -370,9 +370,9 @@ def drill_size_preset_submit(request, pk):
         preset.save()
         
         messages.success(request, f'Preset "{preset.name}" submitted to {client.name} for approval.')
-        return redirect('core:preset_detail', pk=preset.pk)
+        return redirect('core:drill_size_preset_detail', pk=preset.pk)
     
-    return redirect('core:preset_detail', pk=preset.pk)
+    return redirect('core:drill_size_preset_detail', pk=preset.pk)
 
 
 @login_required
@@ -485,7 +485,7 @@ def equipment_preset_create(request):
         
         if not contractor_ws:
             messages.warning(request, 'You are not assigned to a contractor workspace.')
-            return redirect('equipment_preset_list')
+            return redirect('core:equipment_preset_list')
         
         contractor_workspace = contractor_ws.workspace
     except Exception:
@@ -501,7 +501,7 @@ def equipment_preset_create(request):
             preset.status = EquipmentPreset.STATUS_DRAFT
             preset.save()
             messages.success(request, f'Equipment preset "{preset.name}" created successfully.')
-            return redirect('equipment_preset_detail', pk=preset.pk)
+            return redirect('core:equipment_preset_detail', pk=preset.pk)
     else:
         form = EquipmentPresetForm(user=request.user)
     
@@ -711,7 +711,7 @@ def consumable_preset_create(request):
         
         if not contractor_ws:
             messages.warning(request, 'You are not assigned to a contractor workspace.')
-            return redirect('consumable_preset_list')
+            return redirect('core:consumable_preset_list')
         
         contractor_workspace = contractor_ws.workspace
     except Exception:
@@ -727,7 +727,7 @@ def consumable_preset_create(request):
             preset.status = ConsumablePreset.STATUS_DRAFT
             preset.save()
             messages.success(request, f'Consumable preset "{preset.name}" created successfully.')
-            return redirect('consumable_preset_detail', pk=preset.pk)
+            return redirect('core:consumable_preset_detail', pk=preset.pk)
     else:
         form = ConsumablePresetForm(user=request.user)
     
@@ -942,7 +942,7 @@ def additional_charge_preset_create(request):
         
         if not user_workspaces:
             messages.warning(request, 'You are not assigned to any workspace.')
-            return redirect('additional_charge_preset_list')
+            return redirect('core:additional_charge_preset_list')
         
         workspace = Workspace.objects.filter(pk__in=user_workspaces).first()
         
@@ -965,7 +965,7 @@ def additional_charge_preset_create(request):
             
             preset.save()
             messages.success(request, f'Additional charge preset "{preset.name}" created successfully.')
-            return redirect('additional_charge_preset_detail', pk=preset.pk)
+            return redirect('core:additional_charge_preset_detail', pk=preset.pk)
     else:
         form = AdditionalChargePresetForm(user=request.user)
     
@@ -1025,18 +1025,18 @@ def additional_charge_preset_edit(request, pk):
     user_workspaces = [m.workspace for m in request.user.workspace_memberships.all()]
     if preset.workspace not in user_workspaces and not request.user.is_superuser:
         messages.error(request, 'You do not have permission to edit this preset.')
-        return redirect('additional_charge_preset_detail', pk=pk)
+        return redirect('core:additional_charge_preset_detail', pk=pk)
     
     if preset.status != AdditionalChargePreset.STATUS_DRAFT:
         messages.error(request, 'Only draft presets can be edited.')
-        return redirect('additional_charge_preset_detail', pk=pk)
+        return redirect('core:additional_charge_preset_detail', pk=pk)
     
     if request.method == 'POST':
         form = AdditionalChargePresetForm(request.POST, instance=preset, user=request.user)
         if form.is_valid():
             form.save()
             messages.success(request, f'Additional charge preset "{preset.name}" updated successfully.')
-            return redirect('additional_charge_preset_detail', pk=pk)
+            return redirect('core:additional_charge_preset_detail', pk=pk)
     else:
         form = AdditionalChargePresetForm(instance=preset, user=request.user)
     
@@ -1059,22 +1059,22 @@ def additional_charge_preset_submit(request, pk):
     user_workspaces = [m.workspace for m in request.user.workspace_memberships.all()]
     if preset.workspace not in user_workspaces and not request.user.is_superuser:
         messages.error(request, 'You do not have permission to submit this preset.')
-        return redirect('additional_charge_preset_detail', pk=pk)
+        return redirect('core:additional_charge_preset_detail', pk=pk)
     
     if preset.status != AdditionalChargePreset.STATUS_DRAFT:
         messages.error(request, 'Only draft presets can be submitted.')
-        return redirect('additional_charge_preset_detail', pk=pk)
+        return redirect('core:additional_charge_preset_detail', pk=pk)
     
     if not preset.submitted_to_client:
         messages.error(request, 'Please select a client to submit to before submitting.')
-        return redirect('additional_charge_preset_detail', pk=pk)
+        return redirect('core:additional_charge_preset_detail', pk=pk)
     
     preset.status = AdditionalChargePreset.STATUS_SUBMITTED
     preset.submitted_at = timezone.now()
     preset.save()
     
     messages.success(request, f'Additional charge preset "{preset.name}" submitted to {preset.submitted_to_client.name} for approval.')
-    return redirect('additional_charge_preset_detail', pk=pk)
+    return redirect('core:additional_charge_preset_detail', pk=pk)
 
 
 @login_required
@@ -1087,11 +1087,11 @@ def additional_charge_preset_approve(request, pk):
     # Check permissions
     if not hasattr(request.user, 'client_profile') or request.user.client_profile != preset.submitted_to_client:
         messages.error(request, 'You do not have permission to approve this preset.')
-        return redirect('additional_charge_preset_detail', pk=pk)
+        return redirect('core:additional_charge_preset_detail', pk=pk)
     
     if preset.client_status != AdditionalChargePreset.CLIENT_PENDING:
         messages.error(request, 'This preset is not pending approval.')
-        return redirect('additional_charge_preset_detail', pk=pk)
+        return redirect('core:additional_charge_preset_detail', pk=pk)
     
     preset.client_status = AdditionalChargePreset.CLIENT_APPROVED
     preset.client_approved_at = timezone.now()
@@ -1099,4 +1099,5 @@ def additional_charge_preset_approve(request, pk):
     preset.save()
     
     messages.success(request, f'Additional charge preset "{preset.name}" approved successfully.')
-    return redirect('additional_charge_preset_detail', pk=pk)
+    return redirect('core:additional_charge_preset_detail', pk=pk)
+

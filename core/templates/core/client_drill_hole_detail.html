@@ -78,13 +78,17 @@
         <!-- Depth Axis -->
         <div class="depth-axis">
           <div style="position: relative; height: 400px;">
-            {% for i in "012345678901" %}
-              {% with pct=i|add:0 %}
-                <div class="depth-tick" style="top: {{ pct|mul:50 }}px;">
-                  {{ pct|mul:10 }}%
-                </div>
-              {% endwith %}
-            {% endfor %}
+            <div class="depth-tick" style="top: 0px;">0%</div>
+            <div class="depth-tick" style="top: 40px;">10%</div>
+            <div class="depth-tick" style="top: 80px;">20%</div>
+            <div class="depth-tick" style="top: 120px;">30%</div>
+            <div class="depth-tick" style="top: 160px;">40%</div>
+            <div class="depth-tick" style="top: 200px;">50%</div>
+            <div class="depth-tick" style="top: 240px;">60%</div>
+            <div class="depth-tick" style="top: 280px;">70%</div>
+            <div class="depth-tick" style="top: 320px;">80%</div>
+            <div class="depth-tick" style="top: 360px;">90%</div>
+            <div class="depth-tick" style="top: 400px;">100%</div>
           </div>
         </div>
 

@@ -42,6 +42,15 @@ def user_workspace(request):
             'user_is_client_workspace': True,
         }
 
+    # Legacy fallback: some client users are still represented only by UserProfile.role.
+    profile = getattr(request.user, 'profile', None)
+    if profile and getattr(profile, 'is_client', False):
+        return {
+            'user_workspace': None,
+            'user_workspace_name': profile.company or request.user.username,
+            'user_is_client_workspace': True,
+        }
+
     # Contractor / staff users: first contractor workspace membership
     membership = (
         request.user.workspace_memberships

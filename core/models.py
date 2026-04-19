@@ -327,6 +327,14 @@ class DrillingProgress(models.Model):
     
     shift = models.ForeignKey(DrillShift, on_delete=models.CASCADE, related_name='progress')
     hole_number = models.CharField(max_length=50, blank=True, help_text="Hole identifier (e.g., BH-001)")
+    drill_hole = models.ForeignKey(
+        'DrillHole',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='drilling_progress',
+        help_text="Linked geology hole record",
+    )
     size = models.CharField(max_length=10, choices=SIZE_CHOICES, default='HQ', help_text="Drill bit size")
     start_depth = models.DecimalField(max_digits=10, decimal_places=2)
     end_depth = models.DecimalField(max_digits=10, decimal_places=2)

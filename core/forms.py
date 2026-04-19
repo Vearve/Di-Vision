@@ -105,6 +105,20 @@ class DrillingProgressForm(forms.ModelForm):
             if optional_field in self.fields:
                 self.fields[optional_field].required = False
 
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        hole_id = self.cleaned_data.get('hole_number') or ''
+        if hole_id:
+            try:
+                instance.drill_hole = DrillHole.objects.get(hole_id=hole_id)
+            except DrillHole.DoesNotExist:
+                instance.drill_hole = None
+        else:
+            instance.drill_hole = None
+        if commit:
+            instance.save()
+        return instance
+
     class Meta:
         model = DrillingProgress
         fields = ['hole_number', 'size', 'start_depth', 'end_depth', 'meters_drilled',

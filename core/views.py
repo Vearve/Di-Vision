@@ -49,6 +49,36 @@ def _is_client_user(user):
     return is_client
 
 
+def _get_client_queryset_for_user(user):
+    """Return all active client companies the user can access."""
+    if not getattr(user, 'is_authenticated', False):
+        return Client.objects.none()
+
+    direct_client = getattr(user, 'client_profile', None)
+    if direct_client:
+        return Client.objects.filter(pk=direct_client.pk, is_active=True)
+
+    workspace_ids = WorkspaceMembership.objects.filter(
+        user=user,
+        workspace__workspace_type=Workspace.WORKSPACE_CLIENT,
+        workspace__is_active=True,
+    ).values_list('workspace_id', flat=True)
+
+    if workspace_ids:
+        return Client.objects.filter(workspace_id__in=workspace_ids, is_active=True).distinct()
+
+    profile = getattr(user, 'profile', None)
+    if profile and getattr(profile, 'is_client', False):
+        return Client.objects.filter(user=user, is_active=True)
+
+    return Client.objects.none()
+
+
+def _get_primary_client_for_user(user):
+    """Return a primary client object for client-scoped pages."""
+    return _get_client_queryset_for_user(user).order_by('id').first()
+
+
 @login_required
 def home_dashboard(request):
     """
@@ -634,8 +664,12 @@ def shift_detail(request, pk):
     if not request.user.is_superuser:
         is_client_user = _is_client_user(request.user)
         if is_client_user:
-            client = getattr(request.user, 'client_profile', None)
-            if shift.status != DrillShift.STATUS_APPROVED or shift.client != client:
+            client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+            if shift.status != DrillShift.STATUS_APPROVED:
+                messages.error(request, 'You can only view approved shifts for your company.')
+                return redirect('core:client_dashboard')
+            # Legacy compatibility: some client users are role-based but not yet mapped to a Client record.
+            if client_ids and shift.client_id not in client_ids:
                 messages.error(request, 'You can only view approved shifts for your company.')
                 return redirect('core:client_dashboard')
         elif profile.is_supervisor and shift.created_by != request.user and shift.status == DrillShift.STATUS_DRAFT:
@@ -1170,13 +1204,17 @@ def boq_report_list(request):
     is_client_view = _is_client_user(request.user)
 
     if is_client_view:
-        client = getattr(request.user, 'client_profile', None)
-        if client is None:
-            messages.error(request, 'Your account is not linked to a client profile.')
+        client_qs = _get_client_queryset_for_user(request.user)
+        if not client_qs.exists():
+            messages.error(request, 'Your account is not linked to a client company.')
             return redirect('accounts:profile')
-        reports = reports.filter(client=client)
-        available_clients = [client]
-        selected_client_id = str(client.id)
+        selected_client_id = request.GET.get('client', '')
+        reports = reports.filter(client__in=client_qs)
+        if selected_client_id and selected_client_id.isdigit():
+            reports = reports.filter(client_id=int(selected_client_id))
+        available_clients = list(client_qs.order_by('name'))
+        if not selected_client_id and len(available_clients) == 1:
+            selected_client_id = str(available_clients[0].id)
     else:
         contractor_workspace_ids = list(
             WorkspaceMembership.objects.filter(
@@ -1341,8 +1379,8 @@ def boq_report_detail(request, pk):
 
     is_client_user = _is_client_user(request.user)
     if is_client_user:
-        client = getattr(request.user, 'client_profile', None)
-        if report.client != client:
+        client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+        if report.client_id not in client_ids:
             messages.error(request, 'You can only view BOQ reports for your company.')
             return redirect('core:boq_report_list')
     elif not request.user.is_superuser:
@@ -1401,8 +1439,8 @@ def boq_add_additional_charge(request, pk):
     is_client_user = _is_client_user(request.user)
 
     if is_client_user:
-        client = getattr(request.user, 'client_profile', None)
-        if report.client != client:
+        client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+        if report.client_id not in client_ids:
             messages.error(request, 'You can only add additional charges to your own BOQ reports.')
             return redirect('core:boq_report_detail', pk=pk)
     elif not request.user.is_superuser:
@@ -1449,8 +1487,8 @@ def boq_update_additional_charge(request, pk, charge_pk):
     is_client_user = _is_client_user(request.user)
 
     if is_client_user:
-        client = getattr(request.user, 'client_profile', None)
-        if report.client != client:
+        client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+        if report.client_id not in client_ids:
             messages.error(request, 'You can only update additional charges for your own BOQ reports.')
             return redirect('core:boq_report_detail', pk=pk)
     elif not request.user.is_superuser:
@@ -1502,8 +1540,8 @@ def boq_report_export(request, pk):
     is_client_user = _is_client_user(request.user)
 
     if is_client_user:
-        client = getattr(request.user, 'client_profile', None)
-        if report.client != client:
+        client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+        if report.client_id not in client_ids:
             messages.error(request, 'You can only export BOQ reports for your company.')
             return redirect('core:boq_report_list')
     elif not request.user.is_superuser:
@@ -1575,9 +1613,8 @@ def boq_submit_to_client(request, pk):
 def client_review_boq(request, pk):
     """Client approves or rejects a submitted BOQ report."""
     report = get_object_or_404(BOQReport.objects.select_related('client'), pk=pk)
-    client = getattr(request.user, 'client_profile', None)
-
-    if report.client != client:
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if report.client_id not in client_ids:
         messages.error(request, 'You can only review BOQ reports for your company.')
         return redirect('core:boq_report_list')
 
@@ -1658,7 +1695,10 @@ def client_dashboard(request):
         messages.error(request, 'You must be a client user to access this page.')
         return redirect('accounts:profile')
     
-    client = request.user.client_profile
+    client = _get_primary_client_for_user(request.user)
+    if client is None:
+        messages.error(request, 'Your account is not linked to any client company record.')
+        return redirect('accounts:profile')
 
     today = timezone.now().date()
 
@@ -1770,15 +1810,13 @@ def client_approve_shift(request, pk):
     """
     shift = get_object_or_404(DrillShift, pk=pk)
     
-    # Check if user is linked to a client
-    try:
-        client = request.user.client_profile
-    except:
-        messages.error(request, 'Your account is not linked to a client profile.')
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if not client_ids:
+        messages.error(request, 'Your account is not linked to a client company.')
         return redirect('accounts:profile')
     
     # Check if shift belongs to this client
-    if shift.client != client:
+    if shift.client_id not in client_ids:
         messages.error(request, 'You can only approve shifts for your company.')
         return redirect('core:client_dashboard')
     
@@ -1832,11 +1870,13 @@ def shift_pdf_export(request, pk):
         .prefetch_related('progress', 'activities', 'materials', 'surveys', 'casings'),
         pk=pk
     )
-    
+
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+
     # Check permissions - user must be creator, staff, or client with access
     if not (shift.created_by == request.user or 
             request.user.is_staff or 
-            (hasattr(request.user, 'client_profile') and shift.client == request.user.client_profile)):
+            (shift.client_id in client_ids)):
         messages.error(request, 'You do not have permission to export this shift.')
         return redirect('core:shift_list')
     

@@ -24,12 +24,42 @@ from .forms import (
 )
 from .models import (
     Client,
+    Workspace,
+    WorkspaceMembership,
     DrillHole,
     LithologyInterval,
     CoordinateSuggestion,
     LithologyQARequest,
     LithologyQAComment,
 )
+
+
+def _get_client_queryset_for_user(user):
+    """Return active client companies available to the current user."""
+    if not getattr(user, 'is_authenticated', False):
+        return Client.objects.none()
+
+    direct_client = getattr(user, 'client_profile', None)
+    if direct_client:
+        return Client.objects.filter(pk=direct_client.pk, is_active=True)
+
+    workspace_ids = WorkspaceMembership.objects.filter(
+        user=user,
+        workspace__workspace_type=Workspace.WORKSPACE_CLIENT,
+        workspace__is_active=True,
+    ).values_list('workspace_id', flat=True)
+    if workspace_ids:
+        return Client.objects.filter(workspace_id__in=workspace_ids, is_active=True).distinct()
+
+    profile = getattr(user, 'profile', None)
+    if profile and getattr(profile, 'is_client', False):
+        return Client.objects.filter(user=user, is_active=True)
+
+    return Client.objects.none()
+
+
+def _get_primary_client_for_user(user):
+    return _get_client_queryset_for_user(user).order_by('id').first()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -487,18 +517,18 @@ def client_drill_hole_list(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Client view only.")
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
+    client = _get_primary_client_for_user(request.user)
+    if not client:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("No client profile linked.")
+        return HttpResponseForbidden("No client company linked.")
     
     holes = DrillHole.objects.filter(
-        client=client_profile
+        client=client
     ).select_related('client').prefetch_related('lithology_intervals').order_by('hole_id')
     
     return render(request, 'core/client_drill_hole_list.html', {
         'holes': holes,
-        'client': client_profile,
+        'client': client,
     })
 
 
@@ -510,12 +540,12 @@ def client_drill_hole_detail(request, pk):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Client view only.")
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if not client_ids:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("No client profile linked.")
+        return HttpResponseForbidden("No client company linked.")
     
-    hole = get_object_or_404(DrillHole.objects.select_related('client', 'created_by'), pk=pk, client=client_profile)
+    hole = get_object_or_404(DrillHole.objects.select_related('client', 'created_by'), pk=pk, client_id__in=client_ids)
     intervals = hole.lithology_intervals.order_by('depth_from')
 
     max_depth = float(hole.get_max_logged_depth()) or 1
@@ -547,16 +577,16 @@ def client_geology_map(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Client view only.")
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
+    client = _get_primary_client_for_user(request.user)
+    if not client:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("No client profile linked.")
+        return HttpResponseForbidden("No client company linked.")
     
-    holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    holes = DrillHole.objects.filter(client=client).select_related('client').order_by('hole_id')
     
     return render(request, 'core/client_geology_map.html', {
         'holes': holes,
-        'client': client_profile,
+        'client': client,
         'is_client_view': True,
     })
 
@@ -569,11 +599,11 @@ def client_geology_map_data(request):
     if not _is_client_user(request.user):
         return JsonResponse({'error': 'Client view only.'}, status=403)
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
-        return JsonResponse({'error': 'No client profile linked.'}, status=403)
+    client = _get_primary_client_for_user(request.user)
+    if not client:
+        return JsonResponse({'error': 'No client company linked.'}, status=403)
     
-    holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    holes = DrillHole.objects.filter(client=client).select_related('client').order_by('hole_id')
     
     features = []
     for hole in holes:
@@ -608,11 +638,11 @@ def client_geology_map_export(request):
     if not _is_client_user(request.user):
         return JsonResponse({'error': 'Client view only.'}, status=403)
 
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
-        return JsonResponse({'error': 'No client profile linked.'}, status=403)
+    client = _get_primary_client_for_user(request.user)
+    if not client:
+        return JsonResponse({'error': 'No client company linked.'}, status=403)
 
-    holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    holes = DrillHole.objects.filter(client=client).select_related('client').order_by('hole_id')
 
     features = []
     for hole in holes:
@@ -636,7 +666,7 @@ def client_geology_map_export(request):
         'type': 'FeatureCollection',
         'features': features,
     })
-    safe_client_name = client_profile.name.replace(' ', '_')
+    safe_client_name = client.name.replace(' ', '_')
     response['Content-Disposition'] = f'attachment; filename="collars_{safe_client_name}.geojson"'
     return response
 
@@ -649,16 +679,16 @@ def client_drill_hole_paths_3d(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Client view only.")
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
+    client = _get_primary_client_for_user(request.user)
+    if not client:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("No client profile linked.")
+        return HttpResponseForbidden("No client company linked.")
     
-    holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    holes = DrillHole.objects.filter(client=client).select_related('client').order_by('hole_id')
     
     return render(request, 'core/client_drill_hole_paths_3d.html', {
         'holes': holes,
-        'client': client_profile,
+        'client': client,
         'is_client_view': True,
     })
 
@@ -671,11 +701,11 @@ def client_drill_hole_paths_3d_export(request):
     if not _is_client_user(request.user):
         return JsonResponse({'error': 'Client view only.'}, status=403)
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
-        return JsonResponse({'error': 'No client profile linked.'}, status=403)
+    client = _get_primary_client_for_user(request.user)
+    if not client:
+        return JsonResponse({'error': 'No client company linked.'}, status=403)
     
-    holes = DrillHole.objects.filter(client=client_profile).prefetch_related('survey_stations').order_by('hole_id')
+    holes = DrillHole.objects.filter(client=client).prefetch_related('survey_stations').order_by('hole_id')
     
     features = []
     for hole in holes:
@@ -703,7 +733,7 @@ def client_drill_hole_paths_3d_export(request):
         'type': 'FeatureCollection',
         'features': features,
     })
-    response['Content-Disposition'] = f'attachment; filename="drill_paths_{client_profile.name.replace(" ", "_")}.geojson"'
+    response['Content-Disposition'] = f'attachment; filename="drill_paths_{client.name.replace(" ", "_")}.geojson"'
     return response
 
 
@@ -715,12 +745,12 @@ def client_cross_section(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Client view only.")
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
+    client = _get_primary_client_for_user(request.user)
+    if not client:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("No client profile linked.")
+        return HttpResponseForbidden("No client company linked.")
     
-    all_holes = DrillHole.objects.filter(client=client_profile).select_related('client').order_by('hole_id')
+    all_holes = DrillHole.objects.filter(client=client).select_related('client').order_by('hole_id')
     
     hole_ids_raw = request.GET.get('holes', '').strip()
     selected_ids = set()
@@ -805,11 +835,11 @@ def client_cross_section_export(request):
     if not _is_client_user(request.user):
         return JsonResponse({'error': 'Client view only.'}, status=403)
 
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
-        return JsonResponse({'error': 'No client profile linked.'}, status=403)
+    client = _get_primary_client_for_user(request.user)
+    if not client:
+        return JsonResponse({'error': 'No client company linked.'}, status=403)
 
-    all_holes = DrillHole.objects.filter(client=client_profile).order_by('hole_id')
+    all_holes = DrillHole.objects.filter(client=client).order_by('hole_id')
     hole_ids_raw = request.GET.get('holes', '').strip()
     if not hole_ids_raw:
         return JsonResponse({'error': 'Please provide hole IDs using ?holes=1,2,3'}, status=400)
@@ -853,12 +883,12 @@ def client_cross_section_export(request):
         })
 
     response = JsonResponse({
-        'client': client_profile.name,
+        'client': client.name,
         'requested_hole_ids': raw_ids,
         'max_depth': max_depth,
         'section_data': section_data,
     })
-    safe_client_name = client_profile.name.replace(' ', '_')
+    safe_client_name = client.name.replace(' ', '_')
     response['Content-Disposition'] = f'attachment; filename="cross_section_{safe_client_name}.json"'
     return response
 
@@ -875,14 +905,14 @@ def client_coordinate_suggestion_list(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Client view only.")
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if not client_ids:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("No client profile linked.")
+        return HttpResponseForbidden("No client company linked.")
     
     from .models import CoordinateSuggestion
     suggestions = CoordinateSuggestion.objects.filter(
-        drill_hole__client=client_profile
+        drill_hole__client_id__in=client_ids
     ).select_related('drill_hole', 'suggested_by', 'reviewed_by').order_by('-created_at')
     
     return render(request, 'core/client_coordinate_suggestion_list.html', {
@@ -898,12 +928,12 @@ def client_coordinate_suggestion_create(request, hole_pk):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Client view only.")
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if not client_ids:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("No client profile linked.")
+        return HttpResponseForbidden("No client company linked.")
     
-    hole = get_object_or_404(DrillHole, pk=hole_pk, client=client_profile)
+    hole = get_object_or_404(DrillHole, pk=hole_pk, client_id__in=client_ids)
     
     if request.method == 'POST':
         from .forms import CoordinateSuggestionForm
@@ -939,13 +969,13 @@ def client_coordinate_suggestion_detail(request, pk):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Client view only.")
     
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if not client_ids:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("No client profile linked.")
+        return HttpResponseForbidden("No client company linked.")
     
     from .models import CoordinateSuggestion
-    suggestion = get_object_or_404(CoordinateSuggestion, pk=pk, drill_hole__client=client_profile)
+    suggestion = get_object_or_404(CoordinateSuggestion, pk=pk, drill_hole__client_id__in=client_ids)
     
     return render(request, 'core/client_coordinate_suggestion_detail.html', {
         'suggestion': suggestion,
@@ -1029,12 +1059,12 @@ def client_lithology_qa_list(request):
     if not _is_client_user(request.user):
         return HttpResponseForbidden('Client view only.')
 
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
-        return HttpResponseForbidden('No client profile linked.')
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if not client_ids:
+        return HttpResponseForbidden('No client company linked.')
 
     qa_requests = LithologyQARequest.objects.filter(
-        interval__drill_hole__client=client_profile
+        interval__drill_hole__client_id__in=client_ids
     ).select_related(
         'interval',
         'interval__drill_hole',
@@ -1056,14 +1086,14 @@ def client_lithology_qa_create(request, interval_pk):
     if not _is_client_user(request.user):
         return HttpResponseForbidden('Client view only.')
 
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
-        return HttpResponseForbidden('No client profile linked.')
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if not client_ids:
+        return HttpResponseForbidden('No client company linked.')
 
     interval = get_object_or_404(
         LithologyInterval.objects.select_related('drill_hole'),
         pk=interval_pk,
-        drill_hole__client=client_profile,
+        drill_hole__client_id__in=client_ids,
     )
 
     if request.method == 'POST':
@@ -1093,9 +1123,9 @@ def client_lithology_qa_detail(request, pk):
     if not _is_client_user(request.user):
         return HttpResponseForbidden('Client view only.')
 
-    client_profile = getattr(request.user, 'client_profile', None)
-    if not client_profile:
-        return HttpResponseForbidden('No client profile linked.')
+    client_ids = set(_get_client_queryset_for_user(request.user).values_list('id', flat=True))
+    if not client_ids:
+        return HttpResponseForbidden('No client company linked.')
 
     qa_request = get_object_or_404(
         LithologyQARequest.objects.select_related(
@@ -1105,7 +1135,7 @@ def client_lithology_qa_detail(request, pk):
             'reviewed_by',
         ).prefetch_related('comments__author', 'comments__replies__author'),
         pk=pk,
-        interval__drill_hole__client=client_profile,
+        interval__drill_hole__client_id__in=client_ids,
     )
 
     if request.method == 'POST':
